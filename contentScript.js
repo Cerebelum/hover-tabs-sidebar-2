@@ -21,6 +21,7 @@
   let allTabs = [];
   let searchQuery = "";
   let settings = { ...DEFAULT_SETTINGS };
+  let keepOpenUntil = 0;
 
   const safeSendMessage = (payload) =>
     new Promise((resolve) => {
@@ -76,10 +77,11 @@
     </div>
     <div class="tab-sidebar-toolbar">
       <input type="search" class="tab-search" placeholder="Поиск вкладок" aria-label="Поиск вкладок" />
+      <button type="button" class="tab-search-clear" title="Очистить поиск" aria-label="Очистить поиск" hidden>✕</button>
       <span class="tabs-count">0</span>
     </div>
     <div class="tab-settings-panel" hidden>
-      <label><input type="checkbox" class="settings-preview-toggle" /> Показывать превью</label>
+      <label class="settings-checkbox-row"><input type="checkbox" class="settings-preview-toggle" /> Показывать превью</label>
       <label>Позиция
         <select class="settings-position">
           <option value="left">Слева</option>
@@ -110,6 +112,7 @@
   const refreshButton = sidebar.querySelector(".sidebar-refresh");
   const settingsButton = sidebar.querySelector(".sidebar-settings");
   const searchInput = sidebar.querySelector(".tab-search");
+  const searchClearButton = sidebar.querySelector(".tab-search-clear");
   const counter = sidebar.querySelector(".tabs-count");
   const settingsPanel = sidebar.querySelector(".tab-settings-panel");
   const warningBox = sidebar.querySelector(".tab-sidebar-warning");
@@ -186,6 +189,7 @@
   };
 
   const scheduleHide = () => {
+    if (Date.now() < keepOpenUntil) return;
     cancelHide();
     hideTimer = setTimeout(() => hideSidebar(), Math.max(0, Number(settings.hideDelay) || 0));
   };
@@ -347,6 +351,8 @@
       return;
     }
 
+    keepOpenUntil = Date.now() + 1200;
+    cancelHide();
     requestTabs();
   };
 
@@ -372,23 +378,15 @@
       previewItem = item;
       preview.innerHTML = "";
 
-      if (item.dataset.preview) {
-        const previewImage = document.createElement("img");
-        previewImage.className = "preview-image";
-        previewImage.alt = item.dataset.title || "Превью вкладки";
-        previewImage.src = item.dataset.preview;
-        preview.append(previewImage);
-      } else {
-        const title = document.createElement("div");
-        title.className = "preview-title";
-        title.textContent = item.dataset.title || "Без названия";
+      const title = document.createElement("div");
+      title.className = "preview-title";
+      title.textContent = item.dataset.title || "Без названия";
 
-        const url = document.createElement("div");
-        url.className = "preview-url";
-        url.textContent = item.dataset.url || "";
+      const url = document.createElement("div");
+      url.className = "preview-url";
+      url.textContent = item.dataset.url || "";
 
-        preview.append(title, url);
-      }
+      preview.append(title, url);
     }
 
     const sidebarRect = sidebar.getBoundingClientRect();
@@ -426,6 +424,13 @@
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) hideSidebar(true);
+  });
+
+  window.addEventListener("blur", () => hideSidebar(true));
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!sidebarVisible || sidebar.contains(event.target)) return;
+    hideSidebar(true);
   });
 
   sidebar.addEventListener("mouseenter", () => {
@@ -476,7 +481,16 @@
 
   searchInput.addEventListener("input", () => {
     searchQuery = searchInput.value || "";
+    searchClearButton.hidden = !searchQuery;
     renderTabs();
+  });
+
+  searchClearButton.addEventListener("click", () => {
+    searchInput.value = "";
+    searchQuery = "";
+    searchClearButton.hidden = true;
+    renderTabs();
+    searchInput.focus();
   });
 
   list.addEventListener("click", (event) => {
@@ -510,6 +524,24 @@
   );
 
   list.addEventListener("mouseleave", () => hidePreview());
+
+  list.addEventListener(
+    "wheel",
+    (event) => {
+      const { scrollTop, scrollHeight, clientHeight } = list;
+      const scrollingDown = event.deltaY > 0;
+      const scrollingUp = event.deltaY < 0;
+      const atTop = scrollTop <= 0;
+      const atBottom = scrollTop + clientHeight >= scrollHeight;
+      const canScroll = scrollHeight > clientHeight;
+
+      if (canScroll && ((scrollingDown && !atBottom) || (scrollingUp && !atTop))) {
+        event.preventDefault();
+        list.scrollTop += event.deltaY;
+      }
+    },
+    { passive: false },
+  );
 
   resizer.addEventListener("mousedown", (event) => {
     event.preventDefault();

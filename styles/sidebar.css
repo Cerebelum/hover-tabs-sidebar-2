@@ -133,6 +133,22 @@
   background: rgba(127, 127, 127, 0.25);
 }
 
+.tab-search-clear {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.tab-search-clear:hover {
+  background: rgba(127, 127, 127, 0.22);
+}
+
 .tab-settings-panel {
   display: grid;
   gap: 8px;
@@ -148,6 +164,12 @@
   gap: 4px;
 }
 
+.tab-settings-panel .settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .tab-settings-panel input,
 .tab-settings-panel select {
   border: 1px solid rgba(127, 127, 127, 0.4);
@@ -157,9 +179,22 @@
   padding: 4px 6px;
 }
 
+#tab-hover-sidebar.theme-dark .tab-settings-panel select,
+#tab-hover-sidebar.theme-dark .tab-settings-panel option {
+  background: #2f3136;
+  color: #eceff4;
+}
+
+#tab-hover-sidebar.theme-light .tab-settings-panel select,
+#tab-hover-sidebar.theme-light .tab-settings-panel option {
+  background: #f2f4f7;
+  color: #21252c;
+}
+
 .tabs-list {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 2px 0 6px;
 }
 
