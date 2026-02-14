@@ -1,4 +1,5 @@
 const faviconCache = new Map();
+const tabPreviewCache = new Map();
 
 const reply = (sendResponse, data = {}, error) => {
   sendResponse(error ? { success: false, error } : { success: true, ...data });
@@ -11,6 +12,29 @@ const blobToDataUrl = (blob) =>
     reader.onerror = () => reject(reader.error || new Error("Не удалось прочитать favicon."));
     reader.readAsDataURL(blob);
   });
+
+const captureTabPreview = (windowId, tabId) => {
+  if (!windowId || !tabId) return;
+
+  chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 55 }, (dataUrl) => {
+    if (chrome.runtime.lastError?.message || !dataUrl) return;
+    tabPreviewCache.set(tabId, dataUrl);
+  });
+};
+
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  captureTabPreview(windowId, tabId);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" && tab.active) {
+    captureTabPreview(tab.windowId, tabId);
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabPreviewCache.delete(tabId);
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, tabId, url } = message;
@@ -31,6 +55,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         url: tabUrl,
         favIconUrl,
         active,
+        preview: tabPreviewCache.get(id) || "",
       }));
 
       reply(sendResponse, { tabs: payload });

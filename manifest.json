@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Hover Tabs Sidebar",
   "description": "Боковая панель с вкладками при наведении на край экрана.",
-  "version": "1.0.1",
-  "permissions": ["tabs"],
+  "version": "1.1.0",
+  "permissions": ["tabs", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
