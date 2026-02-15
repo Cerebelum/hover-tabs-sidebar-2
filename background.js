@@ -43,28 +43,47 @@ chrome.tabs.onZoomChange.addListener(({ tabId, newZoomFactor }) => {
   });
 });
 
-const reorderTabsInWindow = (orderedIds, sendResponse) => {
+const reorderTabsInWindow = (orderedIds, windowId, sendResponse) => {
   if (!orderedIds?.length) {
     reply(sendResponse, {});
     return;
   }
 
-  const moveNext = (index) => {
-    if (index >= orderedIds.length) {
-      reply(sendResponse, {});
+  const queryInfo = Number.isInteger(windowId) ? { windowId } : { currentWindow: true };
+
+  chrome.tabs.query(queryInfo, (tabs) => {
+    const err = chrome.runtime.lastError?.message;
+    if (err) {
+      reply(sendResponse, {}, err);
       return;
     }
 
-    chrome.tabs.move(orderedIds[index], { index }, () => {
-      if (chrome.runtime.lastError?.message) {
-        reply(sendResponse, {}, chrome.runtime.lastError.message);
+    const tabById = new Map(tabs.map((tab) => [tab.id, tab]));
+    const pinnedCount = tabs.filter((tab) => tab.pinned).length;
+    const pinnedIds = orderedIds.filter((id) => tabById.get(id)?.pinned);
+    const unpinnedIds = orderedIds.filter((id) => tabById.get(id) && !tabById.get(id).pinned);
+    const safeOrder = [...pinnedIds, ...unpinnedIds];
+
+    const moveNext = (index) => {
+      if (index >= safeOrder.length) {
+        reply(sendResponse, {});
         return;
       }
-      moveNext(index + 1);
-    });
-  };
 
-  moveNext(0);
+      const tabId = safeOrder[index];
+      const targetIndex = index < pinnedIds.length ? index : pinnedCount + (index - pinnedIds.length);
+
+      chrome.tabs.move(tabId, { index: targetIndex }, () => {
+        if (chrome.runtime.lastError?.message) {
+          reply(sendResponse, {}, chrome.runtime.lastError.message);
+          return;
+        }
+        moveNext(index + 1);
+      });
+    };
+
+    moveNext(0);
+  });
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -126,7 +145,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (type === "reorderTabs") {
-    reorderTabsInWindow(Array.isArray(message.orderedIds) ? message.orderedIds : [], sendResponse);
+    reorderTabsInWindow(Array.isArray(message.orderedIds) ? message.orderedIds : [], sender?.tab?.windowId, sendResponse);
     return true;
   }
 

@@ -385,9 +385,13 @@
     });
   };
 
-  const getOrderedTabs = () => {
+  const getSortedTabsWithoutSearch = () => {
     const source = getSourceOrderedTabs();
-    const sorted = sortMode === "none" ? applyManualOrder(source) : [...source].sort(compareBySortMode);
+    return sortMode === "none" ? applyManualOrder(source) : [...source].sort(compareBySortMode);
+  };
+
+  const getOrderedTabs = () => {
+    const sorted = getSortedTabsWithoutSearch();
     const query = searchQuery.trim().toLowerCase();
     if (!query) return sorted;
     return sorted.filter((tab) => {
@@ -419,7 +423,7 @@
       originalBrowserOrder = getSourceOrderedTabs().map((tab) => tab.id);
     }
 
-    const orderedIds = getOrderedTabs().map((tab) => tab.id);
+    const orderedIds = getSortedTabsWithoutSearch().map((tab) => tab.id);
     await syncBrowserTabsOrder(orderedIds);
   };
 
