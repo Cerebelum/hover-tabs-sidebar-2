@@ -36,6 +36,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabPreviewCache.delete(tabId);
 });
 
+chrome.tabs.onZoomChange.addListener(({ tabId, newZoomFactor }) => {
+  if (!tabId || !newZoomFactor) return;
+  chrome.tabs.sendMessage(tabId, { type: "zoomChanged", zoomFactor: newZoomFactor }, () => {
+    void chrome.runtime.lastError;
+  });
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, tabId, url } = message;
 
@@ -49,18 +56,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
-      const payload = tabs.map(({ id, title, url: tabUrl, favIconUrl, active }) => ({
+      const payload = tabs.map(({ id, title, url: tabUrl, favIconUrl, active, pinned }) => ({
         id,
         title,
         url: tabUrl,
         favIconUrl,
         active,
+        pinned,
         preview: tabPreviewCache.get(id) || "",
       }));
 
-      reply(sendResponse, { tabs: payload });
+      const resolveTabs = (zoomFactor = 1) => {
+        reply(sendResponse, { tabs: payload, zoomFactor });
+      };
+
+      if (sender?.tab?.id) {
+        chrome.tabs.getZoom(sender.tab.id, (zoomFactor) => {
+          if (chrome.runtime.lastError?.message) {
+            resolveTabs(1);
+            return;
+          }
+          resolveTabs(zoomFactor || 1);
+        });
+        return;
+      }
+
+      resolveTabs(1);
     });
 
+    return true;
+  }
+
+  if (type === "getZoom") {
+    if (!sender?.tab?.id) {
+      reply(sendResponse, { zoomFactor: 1 });
+      return false;
+    }
+
+    chrome.tabs.getZoom(sender.tab.id, (zoomFactor) => {
+      reply(sendResponse, { zoomFactor: chrome.runtime.lastError?.message ? 1 : zoomFactor || 1 });
+    });
     return true;
   }
 
