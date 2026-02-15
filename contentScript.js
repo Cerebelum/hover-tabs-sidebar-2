@@ -330,7 +330,7 @@
       const pin = document.createElement("span");
       pin.className = "tab-pin";
       pin.title = "Закрепленная вкладка";
-      pin.textContent = "���";
+      pin.textContent = "���";
       pin.hidden = !tab.pinned;
 
       const actions = document.createElement("div");
