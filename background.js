@@ -36,6 +36,37 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabPreviewCache.delete(tabId);
 });
 
+chrome.tabs.onZoomChange.addListener(({ tabId, newZoomFactor }) => {
+  if (!tabId || !newZoomFactor) return;
+  chrome.tabs.sendMessage(tabId, { type: "zoomChanged", zoomFactor: newZoomFactor }, () => {
+    void chrome.runtime.lastError;
+  });
+});
+
+const reorderTabsInWindow = (orderedIds, sendResponse) => {
+  if (!orderedIds?.length) {
+    reply(sendResponse, {});
+    return;
+  }
+
+  const moveNext = (index) => {
+    if (index >= orderedIds.length) {
+      reply(sendResponse, {});
+      return;
+    }
+
+    chrome.tabs.move(orderedIds[index], { index }, () => {
+      if (chrome.runtime.lastError?.message) {
+        reply(sendResponse, {}, chrome.runtime.lastError.message);
+        return;
+      }
+      moveNext(index + 1);
+    });
+  };
+
+  moveNext(0);
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, tabId, url } = message;
 
@@ -49,18 +80,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
-      const payload = tabs.map(({ id, title, url: tabUrl, favIconUrl, active }) => ({
+      const payload = tabs.map(({ id, title, url: tabUrl, favIconUrl, active, pinned, index, lastAccessed }) => ({
         id,
         title,
         url: tabUrl,
         favIconUrl,
         active,
+        pinned,
+        index,
+        lastAccessed,
         preview: tabPreviewCache.get(id) || "",
       }));
 
-      reply(sendResponse, { tabs: payload });
+      const resolveTabs = (zoomFactor = 1) => {
+        reply(sendResponse, { tabs: payload, zoomFactor });
+      };
+
+      if (sender?.tab?.id) {
+        chrome.tabs.getZoom(sender.tab.id, (zoomFactor) => {
+          if (chrome.runtime.lastError?.message) {
+            resolveTabs(1);
+            return;
+          }
+          resolveTabs(zoomFactor || 1);
+        });
+        return;
+      }
+
+      resolveTabs(1);
     });
 
+    return true;
+  }
+
+  if (type === "getZoom") {
+    if (!sender?.tab?.id) {
+      reply(sendResponse, { zoomFactor: 1 });
+      return false;
+    }
+
+    chrome.tabs.getZoom(sender.tab.id, (zoomFactor) => {
+      reply(sendResponse, { zoomFactor: chrome.runtime.lastError?.message ? 1 : zoomFactor || 1 });
+    });
+    return true;
+  }
+
+  if (type === "reorderTabs") {
+    reorderTabsInWindow(Array.isArray(message.orderedIds) ? message.orderedIds : [], sendResponse);
     return true;
   }
 

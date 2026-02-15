@@ -1,4 +1,5 @@
 #tab-hover-sidebar {
+  zoom: 1;
   position: fixed;
   top: 0;
   width: 320px;
@@ -11,6 +12,10 @@
   flex-direction: column;
   border-right: 1px solid rgba(0, 0, 0, 0.1);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#tab-hover-sidebar [hidden] {
+  display: none !important;
 }
 
 #tab-hover-sidebar.position-left {
@@ -75,6 +80,7 @@
 
 .sidebar-refresh,
 .sidebar-settings,
+.sidebar-sort,
 .tab-action {
   background: transparent;
   color: inherit;
@@ -84,7 +90,8 @@
 }
 
 .sidebar-refresh,
-.sidebar-settings {
+.sidebar-settings,
+.sidebar-sort {
   width: 30px;
   height: 30px;
   font-size: 16px;
@@ -92,8 +99,60 @@
 
 .sidebar-refresh:hover,
 .sidebar-settings:hover,
+.sidebar-sort:hover,
 .tab-action:hover {
   background: rgba(127, 127, 127, 0.22);
+}
+
+.tab-sort-panel,
+.tab-settings-panel {
+  display: grid;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.16);
+  font-size: 13px;
+}
+
+.tab-sort-panel label,
+.tab-settings-panel label {
+  display: grid;
+  gap: 4px;
+}
+
+.tab-sort-panel .settings-checkbox-row,
+.tab-settings-panel .settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab-sort-panel input,
+.tab-sort-panel select,
+.tab-settings-panel input,
+.tab-settings-panel select {
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  background: rgba(127, 127, 127, 0.12);
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+#tab-hover-sidebar.theme-dark .tab-sort-panel select,
+#tab-hover-sidebar.theme-dark .tab-sort-panel option,
+#tab-hover-sidebar.theme-dark .tab-settings-panel select,
+#tab-hover-sidebar.theme-dark .tab-settings-panel option {
+  background: #2f3136;
+  color: #eceff4;
+}
+
+#tab-hover-sidebar.theme-light .tab-sort-panel select,
+#tab-hover-sidebar.theme-light .tab-sort-panel option,
+#tab-hover-sidebar.theme-light .tab-settings-panel select,
+#tab-hover-sidebar.theme-light .tab-settings-panel option {
+  background: #f2f4f7;
+  color: #21252c;
 }
 
 .tab-sidebar-warning {
@@ -149,48 +208,6 @@
   background: rgba(127, 127, 127, 0.22);
 }
 
-.tab-settings-panel {
-  display: grid;
-  gap: 8px;
-  margin: 0 12px 8px;
-  padding: 10px;
-  border-radius: 10px;
-  background: rgba(127, 127, 127, 0.16);
-  font-size: 13px;
-}
-
-.tab-settings-panel label {
-  display: grid;
-  gap: 4px;
-}
-
-.tab-settings-panel .settings-checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tab-settings-panel input,
-.tab-settings-panel select {
-  border: 1px solid rgba(127, 127, 127, 0.4);
-  background: rgba(127, 127, 127, 0.12);
-  color: inherit;
-  border-radius: 6px;
-  padding: 4px 6px;
-}
-
-#tab-hover-sidebar.theme-dark .tab-settings-panel select,
-#tab-hover-sidebar.theme-dark .tab-settings-panel option {
-  background: #2f3136;
-  color: #eceff4;
-}
-
-#tab-hover-sidebar.theme-light .tab-settings-panel select,
-#tab-hover-sidebar.theme-light .tab-settings-panel option {
-  background: #f2f4f7;
-  color: #21252c;
-}
-
 .tabs-list {
   flex: 1;
   overflow-y: auto;
@@ -222,6 +239,16 @@
 
 .tab-item.is-active {
   background: rgba(89, 141, 255, 0.22);
+}
+
+.tab-item.is-dragging {
+  opacity: 0.45;
+}
+
+.tab-pin {
+  font-size: 12px;
+  opacity: 0.95;
+  flex-shrink: 0;
 }
 
 .tab-icon {

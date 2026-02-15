@@ -11,6 +11,7 @@
     hideDelay: 220,
     theme: "dark",
     width: 320,
+    manualOrder: [],
   };
 
   let sidebarVisible = false;
@@ -22,6 +23,12 @@
   let searchQuery = "";
   let settings = { ...DEFAULT_SETTINGS };
   let keepOpenUntil = 0;
+  let currentZoomFactor = 1;
+  let resolvedSide = "left";
+  let sortMode = "none";
+  let sortSyncBrowser = false;
+  let originalBrowserOrder = null;
+  let dragTabId = null;
 
   const safeSendMessage = (payload) =>
     new Promise((resolve) => {
@@ -60,6 +67,11 @@
     return promise;
   };
 
+  const getChromeFaviconUrl = (tabUrl) => {
+    if (!tabUrl || !/^https?:/i.test(tabUrl)) return "";
+    return `chrome://favicon2/?size=32&scale_factor=2x&page_url=${encodeURIComponent(tabUrl)}`;
+  };
+
   const sidebar = document.createElement("div");
   sidebar.id = "tab-hover-sidebar";
   sidebar.setAttribute("tabindex", "-1");
@@ -68,15 +80,31 @@
     <div class="tab-sidebar-header">
       <span class="header-title">Вкладки</span>
       <div class="header-actions">
+        <button type="button" class="sidebar-sort" title="Сортировка">⇅</button>
         <button type="button" class="sidebar-refresh" title="Обновить список">↻</button>
         <button type="button" class="sidebar-settings" title="Настройки">⚙</button>
       </div>
+    </div>
+    <div class="tab-sort-panel" hidden>
+      <label>Сортировка
+        <select class="sort-mode">
+          <option value="none">Без сортировки (исходный порядок)</option>
+          <option value="domainAsc">Домен (А→Я)</option>
+          <option value="domainDesc">Домен (Я→А)</option>
+          <option value="lastAccessedAsc">Последний просмотр (старые→новые)</option>
+          <option value="lastAccessedDesc">Последний просмотр (новые→старые)</option>
+        </select>
+      </label>
+      <label class="settings-checkbox-row">
+        <input type="checkbox" class="sort-sync-browser" />
+        Сортировать и стандартную панель вкладок
+      </label>
     </div>
     <div class="tab-sidebar-warning" hidden>
       Панель может отображаться некорректно. Обновите текущую вкладку.
     </div>
     <div class="tab-sidebar-toolbar">
-      <input type="search" class="tab-search" placeholder="Поиск вкладок" aria-label="Поиск вкладок" />
+      <input type="text" class="tab-search" placeholder="Поиск вкладок" aria-label="Поиск вкладок" />
       <button type="button" class="tab-search-clear" title="Очистить поиск" aria-label="Очистить поиск" hidden>✕</button>
       <span class="tabs-count">0</span>
     </div>
@@ -111,6 +139,10 @@
 
   const refreshButton = sidebar.querySelector(".sidebar-refresh");
   const settingsButton = sidebar.querySelector(".sidebar-settings");
+  const sortButton = sidebar.querySelector(".sidebar-sort");
+  const sortPanel = sidebar.querySelector(".tab-sort-panel");
+  const sortModeSelect = sidebar.querySelector(".sort-mode");
+  const sortSyncCheckbox = sidebar.querySelector(".sort-sync-browser");
   const searchInput = sidebar.querySelector(".tab-search");
   const searchClearButton = sidebar.querySelector(".tab-search-clear");
   const counter = sidebar.querySelector(".tabs-count");
@@ -129,9 +161,16 @@
 
   const applySidebarPlacement = () => {
     sidebar.classList.remove("position-left", "position-right", "theme-dark", "theme-light");
-    sidebar.classList.add(`position-${settings.position === "both" ? "left" : settings.position}`);
+    const side = settings.position === "both" ? resolvedSide : settings.position;
+    sidebar.classList.add(`position-${side}`);
     sidebar.classList.add(`theme-${settings.theme}`);
     sidebar.style.width = `${settings.width}px`;
+  };
+
+  const applyZoomCompensation = (zoomFactor) => {
+    const parsedFactor = Number(zoomFactor);
+    currentZoomFactor = Number.isFinite(parsedFactor) && parsedFactor > 0 ? parsedFactor : 1;
+    sidebar.style.zoom = String(1 / currentZoomFactor);
   };
 
   const saveSettings = async () => {
@@ -148,6 +187,7 @@
       showDelay: Number(result.showDelay ?? DEFAULT_SETTINGS.showDelay),
       hideDelay: Number(result.hideDelay ?? DEFAULT_SETTINGS.hideDelay),
       width: Math.max(260, Math.min(560, Number(result.width ?? DEFAULT_SETTINGS.width))),
+      manualOrder: Array.isArray(result.manualOrder) ? result.manualOrder : [],
     };
 
     previewToggle.checked = Boolean(settings.showPreview);
@@ -194,6 +234,12 @@
     hideTimer = setTimeout(() => hideSidebar(), Math.max(0, Number(settings.hideDelay) || 0));
   };
 
+  const resolveSideByPointer = (event) => {
+    if (settings.position !== "both") return;
+    resolvedSide = event.clientX <= window.innerWidth / 2 ? "left" : "right";
+    applySidebarPlacement();
+  };
+
   const showSidebar = () => {
     cancelShow();
     if (sidebarVisible) return;
@@ -209,12 +255,13 @@
     if (!sidebarVisible) return;
     if (!force) {
       const active = document.activeElement;
-      if (active && sidebar.contains(active)) return;
+      if (active && sidebar.contains(active) && sidebar.matches(":hover")) return;
     }
     sidebarVisible = false;
     sidebar.classList.remove("visible");
     hidePreview();
     settingsPanel.hidden = true;
+    sortPanel.hidden = true;
   };
 
   const requestTabs = async () => {
@@ -229,6 +276,7 @@
 
     warningBox.hidden = true;
     allTabs = response.tabs || [];
+    applyZoomCompensation(response.zoomFactor);
     renderTabs();
   };
 
@@ -240,48 +288,143 @@
     return fallback;
   };
 
+  const createIconImage = (src) => {
+    const icon = document.createElement("img");
+    icon.className = "tab-icon";
+    icon.alt = "";
+    icon.decoding = "async";
+    icon.referrerPolicy = "no-referrer";
+    icon.src = src;
+    return icon;
+  };
+
+  const tryChromeFavicon = (tab, node) => {
+    const chromeFavicon = getChromeFaviconUrl(tab.url);
+    if (!chromeFavicon || !node.isConnected) return;
+    node.replaceWith(createIconImage(chromeFavicon));
+  };
+
   const buildIconNode = (tab) => {
-    if (!tab.favIconUrl) return buildFallbackIcon(tab.title);
+    if (!tab.favIconUrl) {
+      const fallback = buildFallbackIcon(tab.title);
+      tryChromeFavicon(tab, fallback);
+      return fallback;
+    }
 
     if (!needsSanitization(tab.favIconUrl)) {
-      const icon = document.createElement("img");
-      icon.className = "tab-icon";
-      icon.alt = "";
-      icon.decoding = "async";
-      icon.referrerPolicy = "no-referrer";
-      icon.src = tab.favIconUrl;
+      const icon = createIconImage(tab.favIconUrl);
+      icon.addEventListener("error", () => {
+        const fallback = buildFallbackIcon(tab.title);
+        icon.replaceWith(fallback);
+
+        getSafeIconUrl(tab.favIconUrl)
+          .then((safeUrl) => {
+            if (safeUrl && fallback.isConnected) {
+              fallback.replaceWith(createIconImage(safeUrl));
+              return;
+            }
+            tryChromeFavicon(tab, fallback);
+          })
+          .catch(() => {
+            tryChromeFavicon(tab, fallback);
+          });
+      });
       return icon;
     }
 
     const placeholder = buildFallbackIcon(tab.title);
     getSafeIconUrl(tab.favIconUrl)
       .then((safeUrl) => {
-        if (!safeUrl) return;
-        const icon = document.createElement("img");
-        icon.className = "tab-icon";
-        icon.alt = "";
-        icon.decoding = "async";
-        icon.referrerPolicy = "no-referrer";
-        icon.src = safeUrl;
-        placeholder.replaceWith(icon);
+        if (safeUrl && placeholder.isConnected) {
+          placeholder.replaceWith(createIconImage(safeUrl));
+          return;
+        }
+        tryChromeFavicon(tab, placeholder);
       })
-      .catch(() => {});
+      .catch(() => {
+        tryChromeFavicon(tab, placeholder);
+      });
 
     return placeholder;
   };
 
-  const getFilteredTabs = () => {
+  const getDomain = (url) => {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  };
+
+  const compareBySortMode = (a, b) => {
+    if (sortMode === "domainAsc") {
+      return getDomain(a.url).localeCompare(getDomain(b.url), "ru");
+    }
+    if (sortMode === "domainDesc") {
+      return getDomain(b.url).localeCompare(getDomain(a.url), "ru");
+    }
+    if (sortMode === "lastAccessedAsc") {
+      return (a.lastAccessed || 0) - (b.lastAccessed || 0);
+    }
+    if (sortMode === "lastAccessedDesc") {
+      return (b.lastAccessed || 0) - (a.lastAccessed || 0);
+    }
+    return 0;
+  };
+
+  const getSourceOrderedTabs = () => [...allTabs].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+  const applyManualOrder = (tabs) => {
+    if (!settings.manualOrder?.length) return tabs;
+    const pos = new Map(settings.manualOrder.map((id, index) => [id, index]));
+    return [...tabs].sort((a, b) => {
+      const ap = pos.has(a.id) ? pos.get(a.id) : Number.MAX_SAFE_INTEGER;
+      const bp = pos.has(b.id) ? pos.get(b.id) : Number.MAX_SAFE_INTEGER;
+      if (ap !== bp) return ap - bp;
+      return (a.index ?? 0) - (b.index ?? 0);
+    });
+  };
+
+  const getOrderedTabs = () => {
+    const source = getSourceOrderedTabs();
+    const sorted = sortMode === "none" ? applyManualOrder(source) : [...source].sort(compareBySortMode);
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return allTabs;
-    return allTabs.filter((tab) => {
+    if (!query) return sorted;
+    return sorted.filter((tab) => {
       const title = (tab.title || "").toLowerCase();
       const url = (tab.url || "").toLowerCase();
       return title.includes(query) || url.includes(query);
     });
   };
 
+  const syncBrowserTabsOrder = async (orderedIds) => {
+    if (!sortSyncBrowser || !orderedIds?.length) return;
+    await safeSendMessage({ type: "reorderTabs", orderedIds });
+    requestTabs();
+  };
+
+  const maybeApplyBrowserSort = async () => {
+    if (!sortSyncBrowser) return;
+
+    if (sortMode === "none") {
+      if (originalBrowserOrder?.length) {
+        await safeSendMessage({ type: "reorderTabs", orderedIds: originalBrowserOrder });
+      }
+      originalBrowserOrder = null;
+      requestTabs();
+      return;
+    }
+
+    if (!originalBrowserOrder?.length) {
+      originalBrowserOrder = getSourceOrderedTabs().map((tab) => tab.id);
+    }
+
+    const orderedIds = getOrderedTabs().map((tab) => tab.id);
+    await syncBrowserTabsOrder(orderedIds);
+  };
+
   const renderTabs = () => {
-    const tabs = getFilteredTabs();
+    const tabs = getOrderedTabs();
     counter.textContent = String(tabs.length);
     list.innerHTML = "";
 
@@ -302,6 +445,13 @@
       item.dataset.title = tab.title || "Без названия";
       item.dataset.url = tab.url || "";
       item.dataset.preview = tab.preview || "";
+      item.draggable = sortMode === "none";
+
+      const pin = document.createElement("span");
+      pin.className = "tab-pin";
+      pin.title = "Закрепленная вкладка";
+      pin.textContent = "📌";
+      pin.hidden = !tab.pinned;
 
       const iconNode = buildIconNode(tab);
 
@@ -327,7 +477,7 @@
       closeBtn.textContent = "✕";
 
       actions.append(reloadBtn, closeBtn);
-      item.append(iconNode, title, actions);
+      item.append(pin, iconNode, title, actions);
       fragment.append(item);
     });
 
@@ -404,14 +554,31 @@
 
   const shouldHideOnMove = (event) => {
     const rect = sidebar.getBoundingClientRect();
-    if (settings.position === "right") {
+    if (resolvedSide === "right") {
       return event.clientX < rect.left - 24;
     }
     return event.clientX > rect.right + 24;
   };
 
+  const updateManualOrder = async (draggedId, targetId, insertBefore) => {
+    const currentIds = applyManualOrder(getSourceOrderedTabs()).map((tab) => tab.id);
+    const fromIndex = currentIds.indexOf(draggedId);
+    const targetIndex = currentIds.indexOf(targetId);
+    if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return;
+
+    const [moved] = currentIds.splice(fromIndex, 1);
+    const adjustedTarget = currentIds.indexOf(targetId);
+    const insertIndex = insertBefore ? adjustedTarget : adjustedTarget + 1;
+    currentIds.splice(insertIndex, 0, moved);
+
+    settings.manualOrder = currentIds;
+    await saveSettings();
+    renderTabs();
+  };
+
   document.addEventListener("mousemove", (event) => {
     if (pointerOnTrigger(event)) {
+      resolveSideByPointer(event);
       showSidebar();
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       scheduleHide();
@@ -433,6 +600,11 @@
     hideSidebar(true);
   });
 
+  document.addEventListener("focusin", (event) => {
+    if (!sidebarVisible || sidebar.contains(event.target)) return;
+    hideSidebar(true);
+  });
+
   sidebar.addEventListener("mouseenter", () => {
     cancelHide();
     cancelShow();
@@ -447,6 +619,23 @@
 
   settingsButton.addEventListener("click", () => {
     settingsPanel.hidden = !settingsPanel.hidden;
+    if (!settingsPanel.hidden) sortPanel.hidden = true;
+  });
+
+  sortButton.addEventListener("click", () => {
+    sortPanel.hidden = !sortPanel.hidden;
+    if (!sortPanel.hidden) settingsPanel.hidden = true;
+  });
+
+  sortModeSelect.addEventListener("change", async () => {
+    sortMode = sortModeSelect.value;
+    renderTabs();
+    await maybeApplyBrowserSort();
+  });
+
+  sortSyncCheckbox.addEventListener("change", async () => {
+    sortSyncBrowser = sortSyncCheckbox.checked;
+    await maybeApplyBrowserSort();
   });
 
   previewToggle.addEventListener("change", () => {
@@ -525,6 +714,47 @@
 
   list.addEventListener("mouseleave", () => hidePreview());
 
+  list.addEventListener("dragstart", (event) => {
+    const item = event.target.closest(".tab-item");
+    if (!item || sortMode !== "none") return;
+    dragTabId = Number(item.dataset.tabId);
+    item.classList.add("is-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(dragTabId));
+  });
+
+  list.addEventListener("dragend", (event) => {
+    const item = event.target.closest(".tab-item");
+    if (item) item.classList.remove("is-dragging");
+    dragTabId = null;
+  });
+
+  list.addEventListener("dragover", (event) => {
+    if (sortMode !== "none") return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  });
+
+  list.addEventListener("drop", async (event) => {
+    if (sortMode !== "none") return;
+    event.preventDefault();
+    const target = event.target.closest(".tab-item");
+    if (!target || !dragTabId) return;
+
+    const targetId = Number(target.dataset.tabId);
+    if (!targetId || targetId === dragTabId) return;
+
+    const rect = target.getBoundingClientRect();
+    const insertBefore = event.clientY < rect.top + rect.height / 2;
+    await updateManualOrder(dragTabId, targetId, insertBefore);
+  });
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "zoomChanged") {
+      applyZoomCompensation(message.zoomFactor);
+    }
+  });
+
   list.addEventListener(
     "wheel",
     (event) => {
@@ -547,7 +777,7 @@
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidebar.getBoundingClientRect().width;
-    const resizeFromRight = settings.position === "right";
+    const resizeFromRight = resolvedSide === "right";
 
     const onMove = (moveEvent) => {
       const delta = moveEvent.clientX - startX;
@@ -566,5 +796,11 @@
     document.addEventListener("mouseup", onUp);
   });
 
-  loadSettings().finally(requestTabs);
+  loadSettings().finally(async () => {
+    const zoomResponse = await safeSendMessage({ type: "getZoom" });
+    if (zoomResponse?.success) {
+      applyZoomCompensation(zoomResponse.zoomFactor);
+    }
+    requestTabs();
+  });
 })();
