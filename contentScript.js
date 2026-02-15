@@ -22,6 +22,7 @@
   let searchQuery = "";
   let settings = { ...DEFAULT_SETTINGS };
   let keepOpenUntil = 0;
+  let currentZoomFactor = 1;
 
   const safeSendMessage = (payload) =>
     new Promise((resolve) => {
@@ -76,7 +77,7 @@
       Панель может отображаться некорректно. Обновите текущую вкладку.
     </div>
     <div class="tab-sidebar-toolbar">
-      <input type="search" class="tab-search" placeholder="Поиск вкладок" aria-label="Поиск вкладок" />
+      <input type="text" class="tab-search" placeholder="Поиск вкладок" aria-label="Поиск вкладок" />
       <button type="button" class="tab-search-clear" title="Очистить поиск" aria-label="Очистить поиск" hidden>✕</button>
       <span class="tabs-count">0</span>
     </div>
@@ -132,6 +133,12 @@
     sidebar.classList.add(`position-${settings.position === "both" ? "left" : settings.position}`);
     sidebar.classList.add(`theme-${settings.theme}`);
     sidebar.style.width = `${settings.width}px`;
+  };
+
+  const applyZoomCompensation = (zoomFactor) => {
+    const parsedFactor = Number(zoomFactor);
+    currentZoomFactor = Number.isFinite(parsedFactor) && parsedFactor > 0 ? parsedFactor : 1;
+    sidebar.style.zoom = String(1 / currentZoomFactor);
   };
 
   const saveSettings = async () => {
@@ -209,7 +216,7 @@
     if (!sidebarVisible) return;
     if (!force) {
       const active = document.activeElement;
-      if (active && sidebar.contains(active)) return;
+      if (active && sidebar.contains(active) && sidebar.matches(":hover")) return;
     }
     sidebarVisible = false;
     sidebar.classList.remove("visible");
@@ -229,6 +236,7 @@
 
     warningBox.hidden = true;
     allTabs = response.tabs || [];
+    applyZoomCompensation(response.zoomFactor);
     renderTabs();
   };
 
@@ -240,30 +248,40 @@
     return fallback;
   };
 
+  const createIconImage = (src) => {
+    const icon = document.createElement("img");
+    icon.className = "tab-icon";
+    icon.alt = "";
+    icon.decoding = "async";
+    icon.referrerPolicy = "no-referrer";
+    icon.src = src;
+    return icon;
+  };
+
   const buildIconNode = (tab) => {
     if (!tab.favIconUrl) return buildFallbackIcon(tab.title);
 
     if (!needsSanitization(tab.favIconUrl)) {
-      const icon = document.createElement("img");
-      icon.className = "tab-icon";
-      icon.alt = "";
-      icon.decoding = "async";
-      icon.referrerPolicy = "no-referrer";
-      icon.src = tab.favIconUrl;
+      const icon = createIconImage(tab.favIconUrl);
+      icon.addEventListener("error", () => {
+        const fallback = buildFallbackIcon(tab.title);
+        icon.replaceWith(fallback);
+
+        getSafeIconUrl(tab.favIconUrl)
+          .then((safeUrl) => {
+            if (!safeUrl || !fallback.isConnected) return;
+            fallback.replaceWith(createIconImage(safeUrl));
+          })
+          .catch(() => {});
+      });
       return icon;
     }
 
     const placeholder = buildFallbackIcon(tab.title);
     getSafeIconUrl(tab.favIconUrl)
       .then((safeUrl) => {
-        if (!safeUrl) return;
-        const icon = document.createElement("img");
-        icon.className = "tab-icon";
-        icon.alt = "";
-        icon.decoding = "async";
-        icon.referrerPolicy = "no-referrer";
-        icon.src = safeUrl;
-        placeholder.replaceWith(icon);
+        if (!safeUrl || !placeholder.isConnected) return;
+        placeholder.replaceWith(createIconImage(safeUrl));
       })
       .catch(() => {});
 
@@ -309,6 +327,12 @@
       title.className = "tab-title";
       title.textContent = tab.title || "Без названия";
 
+      const pin = document.createElement("span");
+      pin.className = "tab-pin";
+      pin.title = "Закрепленная вкладка";
+      pin.textContent = "���";
+      pin.hidden = !tab.pinned;
+
       const actions = document.createElement("div");
       actions.className = "tab-actions";
 
@@ -327,7 +351,7 @@
       closeBtn.textContent = "✕";
 
       actions.append(reloadBtn, closeBtn);
-      item.append(iconNode, title, actions);
+      item.append(iconNode, title, pin, actions);
       fragment.append(item);
     });
 
@@ -433,6 +457,11 @@
     hideSidebar(true);
   });
 
+  document.addEventListener("focusin", (event) => {
+    if (!sidebarVisible || sidebar.contains(event.target)) return;
+    hideSidebar(true);
+  });
+
   sidebar.addEventListener("mouseenter", () => {
     cancelHide();
     cancelShow();
@@ -525,6 +554,12 @@
 
   list.addEventListener("mouseleave", () => hidePreview());
 
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "zoomChanged") {
+      applyZoomCompensation(message.zoomFactor);
+    }
+  });
+
   list.addEventListener(
     "wheel",
     (event) => {
@@ -566,5 +601,11 @@
     document.addEventListener("mouseup", onUp);
   });
 
-  loadSettings().finally(requestTabs);
+  loadSettings().finally(async () => {
+    const zoomResponse = await safeSendMessage({ type: "getZoom" });
+    if (zoomResponse?.success) {
+      applyZoomCompensation(zoomResponse.zoomFactor);
+    }
+    requestTabs();
+  });
 })();
