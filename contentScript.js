@@ -4,6 +4,7 @@
 
   const EDGE_TRIGGER_PX = 16;
   const SAFE_ICON_CACHE = new Map();
+  const SORT_NONE = "none";
   const DEFAULT_SETTINGS = {
     showPreview: true,
     position: "left",
@@ -23,6 +24,13 @@
   let settings = { ...DEFAULT_SETTINGS };
   let keepOpenUntil = 0;
   let currentZoomFactor = 1;
+  let currentSide = "left";
+  let sortMode = SORT_NONE;
+  let sortWithBrowser = false;
+  let sidebarOrder = [];
+  let browserOriginalOrder = [];
+  let browserSortApplied = false;
+  let draggedTabId = null;
 
   const safeSendMessage = (payload) =>
     new Promise((resolve) => {
@@ -70,7 +78,24 @@
       <span class="header-title">Вкладки</span>
       <div class="header-actions">
         <button type="button" class="sidebar-refresh" title="Обновить список">↻</button>
+        <button type="button" class="sidebar-sort" title="Сортировка">⇅</button>
         <button type="button" class="sidebar-settings" title="Настройки">⚙</button>
+      </div>
+    </div>
+    <div class="tab-sort-panel" hidden>
+      <label>Тип сортировки
+        <select class="sort-mode-select">
+          <option value="none">Без сортировки</option>
+          <option value="domainAsc">Домен (А-Я)</option>
+          <option value="domainDesc">Домен (Я-А)</option>
+          <option value="lastViewedAsc">Последний просмотр (старые → новые)</option>
+          <option value="lastViewedDesc">Последний просмотр (новые → старые)</option>
+        </select>
+      </label>
+      <label class="settings-checkbox-row"><input type="checkbox" class="sort-with-browser" /> Сортировать и стандартные вкладки Chrome</label>
+      <div class="sort-actions">
+        <button type="button" class="sort-apply">Применить</button>
+        <button type="button" class="sort-reset">Сбросить</button>
       </div>
     </div>
     <div class="tab-sidebar-warning" hidden>
@@ -111,7 +136,13 @@
   document.documentElement.appendChild(sidebar);
 
   const refreshButton = sidebar.querySelector(".sidebar-refresh");
+  const sortButton = sidebar.querySelector(".sidebar-sort");
   const settingsButton = sidebar.querySelector(".sidebar-settings");
+  const sortPanel = sidebar.querySelector(".tab-sort-panel");
+  const sortModeSelect = sidebar.querySelector(".sort-mode-select");
+  const sortWithBrowserCheckbox = sidebar.querySelector(".sort-with-browser");
+  const sortApplyButton = sidebar.querySelector(".sort-apply");
+  const sortResetButton = sidebar.querySelector(".sort-reset");
   const searchInput = sidebar.querySelector(".tab-search");
   const searchClearButton = sidebar.querySelector(".tab-search-clear");
   const counter = sidebar.querySelector(".tabs-count");
@@ -128,9 +159,12 @@
   const preview = sidebar.querySelector(".tab-preview");
   const tooltip = sidebar.querySelector(".tab-tooltip");
 
+  const getTargetSide = () => (settings.position === "both" ? currentSide : settings.position);
+
   const applySidebarPlacement = () => {
+    const targetSide = getTargetSide();
     sidebar.classList.remove("position-left", "position-right", "theme-dark", "theme-light");
-    sidebar.classList.add(`position-${settings.position === "both" ? "left" : settings.position}`);
+    sidebar.classList.add(`position-${targetSide}`);
     sidebar.classList.add(`theme-${settings.theme}`);
     sidebar.style.width = `${settings.width}px`;
   };
@@ -201,8 +235,13 @@
     hideTimer = setTimeout(() => hideSidebar(), Math.max(0, Number(settings.hideDelay) || 0));
   };
 
-  const showSidebar = () => {
+  const showSidebar = (side) => {
     cancelShow();
+    if (side && settings.position === "both" && side !== currentSide) {
+      currentSide = side;
+      applySidebarPlacement();
+    }
+
     if (sidebarVisible) return;
     const delay = Math.max(0, Number(settings.showDelay) || 0);
     showTimer = setTimeout(() => {
@@ -222,6 +261,16 @@
     sidebar.classList.remove("visible");
     hidePreview();
     settingsPanel.hidden = true;
+    sortPanel.hidden = true;
+  };
+
+  const reconcileSidebarOrder = () => {
+    const presentIds = allTabs.map((tab) => tab.id);
+    const presentSet = new Set(presentIds);
+    sidebarOrder = sidebarOrder.filter((tabId) => presentSet.has(tabId));
+    presentIds.forEach((id) => {
+      if (!sidebarOrder.includes(id)) sidebarOrder.push(id);
+    });
   };
 
   const requestTabs = async () => {
@@ -236,6 +285,7 @@
 
     warningBox.hidden = true;
     allTabs = response.tabs || [];
+    reconcileSidebarOrder();
     applyZoomCompensation(response.zoomFactor);
     renderTabs();
   };
@@ -259,39 +309,71 @@
   };
 
   const buildIconNode = (tab) => {
-    if (!tab.favIconUrl) return buildFallbackIcon(tab.title);
+    const fallback = buildFallbackIcon(tab.title);
+    const rawSources = [tab.favIconUrl, tab.extensionFavIconUrl].filter(Boolean);
+    if (!rawSources.length) return fallback;
 
-    if (!needsSanitization(tab.favIconUrl)) {
-      const icon = createIconImage(tab.favIconUrl);
-      icon.addEventListener("error", () => {
-        const fallback = buildFallbackIcon(tab.title);
-        icon.replaceWith(fallback);
+    const applySource = (sourceIndex) => {
+      if (sourceIndex >= rawSources.length) return;
+      const source = rawSources[sourceIndex];
+      getSafeIconUrl(source)
+        .then((safeUrl) => {
+          if (!safeUrl || !fallback.isConnected) {
+            applySource(sourceIndex + 1);
+            return;
+          }
+          const icon = createIconImage(safeUrl);
+          icon.addEventListener("error", () => {
+            if (!fallback.isConnected && icon.isConnected) {
+              icon.replaceWith(fallback);
+            }
+            applySource(sourceIndex + 1);
+          });
+          if (fallback.isConnected) {
+            fallback.replaceWith(icon);
+          }
+        })
+        .catch(() => applySource(sourceIndex + 1));
+    };
 
-        getSafeIconUrl(tab.favIconUrl)
-          .then((safeUrl) => {
-            if (!safeUrl || !fallback.isConnected) return;
-            fallback.replaceWith(createIconImage(safeUrl));
-          })
-          .catch(() => {});
-      });
-      return icon;
-    }
-
-    const placeholder = buildFallbackIcon(tab.title);
-    getSafeIconUrl(tab.favIconUrl)
-      .then((safeUrl) => {
-        if (!safeUrl || !placeholder.isConnected) return;
-        placeholder.replaceWith(createIconImage(safeUrl));
-      })
-      .catch(() => {});
-
-    return placeholder;
+    setTimeout(() => applySource(0), 0);
+    return fallback;
   };
 
-  const getFilteredTabs = () => {
+  const getDomain = (url) => {
+    try {
+      return new URL(url).hostname || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const applySortMode = (tabs) => {
+    if (sortMode === SORT_NONE) return tabs;
+    const sorted = tabs.slice();
+
+    if (sortMode === "domainAsc") {
+      sorted.sort((a, b) => getDomain(a.url).localeCompare(getDomain(b.url), "ru", { sensitivity: "base" }));
+    } else if (sortMode === "domainDesc") {
+      sorted.sort((a, b) => getDomain(b.url).localeCompare(getDomain(a.url), "ru", { sensitivity: "base" }));
+    } else if (sortMode === "lastViewedAsc") {
+      sorted.sort((a, b) => (a.lastAccessed || 0) - (b.lastAccessed || 0));
+    } else if (sortMode === "lastViewedDesc") {
+      sorted.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+    }
+
+    return sorted;
+  };
+
+  const getDisplayTabs = () => {
+    const tabMap = new Map(allTabs.map((tab) => [tab.id, tab]));
+    const ordered = sidebarOrder.map((id) => tabMap.get(id)).filter(Boolean);
+    const sorted = applySortMode(ordered);
+
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return allTabs;
-    return allTabs.filter((tab) => {
+    if (!query) return sorted;
+
+    return sorted.filter((tab) => {
       const title = (tab.title || "").toLowerCase();
       const url = (tab.url || "").toLowerCase();
       return title.includes(query) || url.includes(query);
@@ -299,7 +381,7 @@
   };
 
   const renderTabs = () => {
-    const tabs = getFilteredTabs();
+    const tabs = getDisplayTabs();
     counter.textContent = String(tabs.length);
     list.innerHTML = "";
 
@@ -320,18 +402,19 @@
       item.dataset.title = tab.title || "Без названия";
       item.dataset.url = tab.url || "";
       item.dataset.preview = tab.preview || "";
+      item.draggable = sortMode === SORT_NONE && !searchQuery.trim();
+
+      const pin = document.createElement("span");
+      pin.className = "tab-pin";
+      pin.title = "Закрепленная вкладка";
+      pin.textContent = "📌";
+      pin.hidden = !tab.pinned;
 
       const iconNode = buildIconNode(tab);
 
       const title = document.createElement("div");
       title.className = "tab-title";
       title.textContent = tab.title || "Без названия";
-
-      const pin = document.createElement("span");
-      pin.className = "tab-pin";
-      pin.title = "Закрепленная вкладка";
-      pin.textContent = "���";
-      pin.hidden = !tab.pinned;
 
       const actions = document.createElement("div");
       actions.className = "tab-actions";
@@ -351,7 +434,7 @@
       closeBtn.textContent = "✕";
 
       actions.append(reloadBtn, closeBtn);
-      item.append(iconNode, title, pin, actions);
+      item.append(pin, iconNode, title, actions);
       fragment.append(item);
     });
 
@@ -420,23 +503,72 @@
     preview.classList.add("visible");
   };
 
-  const pointerOnTrigger = (event) => {
-    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX;
-    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX;
-    return event.clientX <= EDGE_TRIGGER_PX || event.clientX >= window.innerWidth - EDGE_TRIGGER_PX;
+  const getTriggerSide = (event) => {
+    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX ? "left" : "";
+    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX ? "right" : "";
+    if (event.clientX <= EDGE_TRIGGER_PX) return "left";
+    if (event.clientX >= window.innerWidth - EDGE_TRIGGER_PX) return "right";
+    return "";
   };
 
   const shouldHideOnMove = (event) => {
     const rect = sidebar.getBoundingClientRect();
-    if (settings.position === "right") {
+    const side = getTargetSide();
+    if (side === "right") {
       return event.clientX < rect.left - 24;
     }
     return event.clientX > rect.right + 24;
   };
 
+  const collectSortedTabIds = () => applySortMode(allTabs).map((tab) => tab.id);
+
+  const restoreBrowserOrderIfNeeded = async () => {
+    if (!browserSortApplied || !browserOriginalOrder.length) return true;
+    const response = await safeSendMessage({ type: "reorderTabs", tabIds: browserOriginalOrder });
+    if (!response?.success) return false;
+    browserSortApplied = false;
+    return true;
+  };
+
+  const applySort = async () => {
+    sortMode = sortModeSelect.value;
+    sortWithBrowser = sortWithBrowserCheckbox.checked;
+
+    if (sortMode === SORT_NONE) {
+      await restoreBrowserOrderIfNeeded();
+      renderTabs();
+      return;
+    }
+
+    if (sortWithBrowser) {
+      if (!browserSortApplied) {
+        browserOriginalOrder = allTabs.map((tab) => tab.id);
+      }
+      const tabIds = collectSortedTabIds();
+      const response = await safeSendMessage({ type: "reorderTabs", tabIds });
+      if (response?.success) {
+        browserSortApplied = true;
+        requestTabs();
+      }
+      return;
+    }
+
+    renderTabs();
+  };
+
+  const resetSort = async () => {
+    sortMode = SORT_NONE;
+    sortModeSelect.value = SORT_NONE;
+    sortWithBrowserCheckbox.checked = false;
+    sortWithBrowser = false;
+    await restoreBrowserOrderIfNeeded();
+    requestTabs();
+  };
+
   document.addEventListener("mousemove", (event) => {
-    if (pointerOnTrigger(event)) {
-      showSidebar();
+    const triggerSide = getTriggerSide(event);
+    if (triggerSide) {
+      showSidebar(triggerSide);
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       scheduleHide();
     }
@@ -474,8 +606,22 @@
 
   refreshButton.addEventListener("click", () => requestTabs());
 
+  sortButton.addEventListener("click", () => {
+    sortPanel.hidden = !sortPanel.hidden;
+    settingsPanel.hidden = true;
+  });
+
+  sortApplyButton.addEventListener("click", () => {
+    applySort();
+  });
+
+  sortResetButton.addEventListener("click", () => {
+    resetSort();
+  });
+
   settingsButton.addEventListener("click", () => {
     settingsPanel.hidden = !settingsPanel.hidden;
+    sortPanel.hidden = true;
   });
 
   previewToggle.addEventListener("change", () => {
@@ -539,6 +685,46 @@
     handleAction("activate", tabId);
   });
 
+  list.addEventListener("dragstart", (event) => {
+    const item = event.target.closest(".tab-item");
+    if (!item || !item.draggable) return;
+    draggedTabId = Number(item.dataset.tabId);
+    item.classList.add("is-dragging");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(draggedTabId));
+    }
+  });
+
+  list.addEventListener("dragend", (event) => {
+    const item = event.target.closest(".tab-item");
+    if (item) item.classList.remove("is-dragging");
+    draggedTabId = null;
+  });
+
+  list.addEventListener("dragover", (event) => {
+    if (!draggedTabId) return;
+    event.preventDefault();
+  });
+
+  list.addEventListener("drop", (event) => {
+    if (!draggedTabId || searchQuery.trim() || sortMode !== SORT_NONE) return;
+    event.preventDefault();
+    const target = event.target.closest(".tab-item");
+    if (!target) return;
+
+    const targetTabId = Number(target.dataset.tabId);
+    if (!targetTabId || targetTabId === draggedTabId) return;
+
+    const fromIndex = sidebarOrder.indexOf(draggedTabId);
+    const toIndex = sidebarOrder.indexOf(targetTabId);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    sidebarOrder.splice(fromIndex, 1);
+    sidebarOrder.splice(toIndex, 0, draggedTabId);
+    renderTabs();
+  });
+
   list.addEventListener(
     "mousemove",
     (event) => {
@@ -582,7 +768,7 @@
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidebar.getBoundingClientRect().width;
-    const resizeFromRight = settings.position === "right";
+    const resizeFromRight = getTargetSide() === "right";
 
     const onMove = (moveEvent) => {
       const delta = moveEvent.clientX - startX;
