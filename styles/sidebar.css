@@ -315,6 +315,14 @@
   opacity: 0.45;
 }
 
+.tab-item[draggable="true"] {
+  cursor: grab;
+}
+
+.tab-item.is-dragging {
+  opacity: 0.45;
+}
+
 .tab-item:hover {
   background: rgba(127, 127, 127, 0.18);
 }
