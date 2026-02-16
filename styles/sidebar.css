@@ -79,8 +79,11 @@
 }
 
 .sidebar-refresh,
+.sidebar-sort,
 .sidebar-settings,
-.tab-action {
+.tab-action,
+.sort-apply,
+.sort-reset {
   background: transparent;
   color: inherit;
   border: none;
@@ -89,6 +92,7 @@
 }
 
 .sidebar-refresh,
+.sidebar-sort,
 .sidebar-settings {
   width: 30px;
   height: 30px;
@@ -96,9 +100,39 @@
 }
 
 .sidebar-refresh:hover,
+.sidebar-sort:hover,
 .sidebar-settings:hover,
-.tab-action:hover {
+.tab-action:hover,
+.sort-apply:hover,
+.sort-reset:hover {
   background: rgba(127, 127, 127, 0.22);
+}
+
+.tab-sort-panel {
+  display: grid;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.16);
+  font-size: 13px;
+}
+
+.tab-sort-panel label {
+  display: grid;
+  gap: 4px;
+}
+
+.sort-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sort-apply,
+.sort-reset {
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .tab-sidebar-warning {
@@ -169,14 +203,17 @@
   gap: 4px;
 }
 
-.tab-settings-panel .settings-checkbox-row {
+.tab-settings-panel .settings-checkbox-row,
+.tab-sort-panel .settings-checkbox-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .tab-settings-panel input,
-.tab-settings-panel select {
+.tab-settings-panel select,
+.tab-sort-panel input,
+.tab-sort-panel select {
   border: 1px solid rgba(127, 127, 127, 0.4);
   background: rgba(127, 127, 127, 0.12);
   color: inherit;
@@ -185,13 +222,17 @@
 }
 
 #tab-hover-sidebar.theme-dark .tab-settings-panel select,
-#tab-hover-sidebar.theme-dark .tab-settings-panel option {
+#tab-hover-sidebar.theme-dark .tab-settings-panel option,
+#tab-hover-sidebar.theme-dark .tab-sort-panel select,
+#tab-hover-sidebar.theme-dark .tab-sort-panel option {
   background: #2f3136;
   color: #eceff4;
 }
 
 #tab-hover-sidebar.theme-light .tab-settings-panel select,
-#tab-hover-sidebar.theme-light .tab-settings-panel option {
+#tab-hover-sidebar.theme-light .tab-settings-panel option,
+#tab-hover-sidebar.theme-light .tab-sort-panel select,
+#tab-hover-sidebar.theme-light .tab-sort-panel option {
   background: #f2f4f7;
   color: #21252c;
 }
@@ -221,6 +262,14 @@
   cursor: pointer;
 }
 
+.tab-item[draggable="true"] {
+  cursor: grab;
+}
+
+.tab-item.is-dragging {
+  opacity: 0.45;
+}
+
 .tab-item:hover {
   background: rgba(127, 127, 127, 0.18);
 }
@@ -247,7 +296,7 @@
 
 .tab-pin {
   font-size: 12px;
-  opacity: 0.85;
+  opacity: 0.9;
   flex-shrink: 0;
 }
 
