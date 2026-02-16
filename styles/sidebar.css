@@ -1,4 +1,5 @@
 #tab-hover-sidebar {
+  all: initial;
   zoom: 1;
   position: fixed;
   top: 0;
@@ -12,6 +13,20 @@
   flex-direction: column;
   border-right: 1px solid rgba(0, 0, 0, 0.1);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-sizing: border-box;
+}
+
+#tab-hover-sidebar *,
+#tab-hover-sidebar *::before,
+#tab-hover-sidebar *::after {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+#tab-hover-sidebar button,
+#tab-hover-sidebar input,
+#tab-hover-sidebar select {
+  font-family: inherit;
 }
 
 #tab-hover-sidebar [hidden] {
@@ -34,6 +49,10 @@
 
 #tab-hover-sidebar.visible {
   transform: translateX(0);
+}
+
+#tab-hover-sidebar.no-transition {
+  transition: none;
 }
 
 #tab-hover-sidebar.theme-dark {
@@ -89,6 +108,7 @@
   border: none;
   border-radius: 6px;
   cursor: pointer;
+  -webkit-text-fill-color: currentColor;
 }
 
 .sidebar-refresh,
@@ -182,6 +202,7 @@
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  -webkit-text-fill-color: currentColor;
 }
 
 .tab-search-clear:hover {
@@ -241,7 +262,7 @@
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 2px 0 6px;
+  padding: 2px 0 4px;
 }
 
 .tab-sidebar-empty {
@@ -256,10 +277,42 @@
 .tab-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 4px 10px;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 8px;
   cursor: pointer;
+  position: relative;
+}
+
+.tab-item[draggable="true"] {
+  cursor: pointer;
+}
+
+.tab-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.tab-item.drop-before::before,
+.tab-item.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: #7ba2ff;
+}
+
+.tab-item.drop-before::before {
+  top: -1px;
+}
+
+.tab-item.drop-after::after {
+  bottom: -1px;
+}
+
+.tab-item.is-dragging {
+  opacity: 0.45;
 }
 
 .tab-item[draggable="true"] {
@@ -306,14 +359,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 14px;
-  line-height: 1.2;
+  font-size: 13px;
+  line-height: 1.15;
 }
 
 .tab-actions {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   opacity: 0;
   transition: opacity 0.12s ease;
 }
@@ -323,9 +376,9 @@
 }
 
 .tab-action {
-  width: 22px;
-  height: 22px;
-  font-size: 14px;
+  width: 20px;
+  height: 20px;
+  font-size: 13px;
 }
 
 .tab-action.danger:hover {
@@ -371,13 +424,6 @@
 .tab-preview.visible,
 .tab-tooltip.visible {
   opacity: 1;
-}
-
-.preview-image {
-  width: 100%;
-  height: auto;
-  border-radius: 7px;
-  display: block;
 }
 
 .preview-title,

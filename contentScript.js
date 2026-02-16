@@ -31,6 +31,8 @@
   let browserOriginalOrder = [];
   let browserSortApplied = false;
   let draggedTabId = null;
+  let dropTargetTabId = null;
+  let dropInsertAfter = false;
 
   const safeSendMessage = (payload) =>
     new Promise((resolve) => {
@@ -169,6 +171,22 @@
     sidebar.style.width = `${settings.width}px`;
   };
 
+  const switchSidebarSideWithoutJank = (nextSide) => {
+    if (nextSide === currentSide) return;
+    const wasVisible = sidebarVisible;
+    if (wasVisible) {
+      sidebar.classList.add("no-transition");
+      sidebar.classList.remove("visible");
+    }
+    currentSide = nextSide;
+    applySidebarPlacement();
+    if (wasVisible) {
+      void sidebar.offsetWidth;
+      sidebar.classList.add("visible");
+      requestAnimationFrame(() => sidebar.classList.remove("no-transition"));
+    }
+  };
+
   const applyZoomCompensation = (zoomFactor) => {
     const parsedFactor = Number(zoomFactor);
     currentZoomFactor = Number.isFinite(parsedFactor) && parsedFactor > 0 ? parsedFactor : 1;
@@ -237,9 +255,8 @@
 
   const showSidebar = (side) => {
     cancelShow();
-    if (side && settings.position === "both" && side !== currentSide) {
-      currentSide = side;
-      applySidebarPlacement();
+    if (side && settings.position === "both") {
+      switchSidebarSideWithoutJank(side);
     }
 
     if (sidebarVisible) return;
@@ -348,7 +365,12 @@
     }
   };
 
-  const applySortMode = (tabs) => {
+  const getBaseOrderedTabs = () => {
+    const tabMap = new Map(allTabs.map((tab) => [tab.id, tab]));
+    return sidebarOrder.map((id) => tabMap.get(id)).filter(Boolean);
+  };
+
+  const sortUnpinnedTabs = (tabs) => {
     if (sortMode === SORT_NONE) return tabs;
     const sorted = tabs.slice();
 
@@ -365,15 +387,19 @@
     return sorted;
   };
 
+  const applySortMode = (tabs) => {
+    if (sortMode === SORT_NONE) return tabs;
+    const pinned = tabs.filter((tab) => tab.pinned);
+    const unpinned = tabs.filter((tab) => !tab.pinned);
+    return [...pinned, ...sortUnpinnedTabs(unpinned)];
+  };
+
   const getDisplayTabs = () => {
-    const tabMap = new Map(allTabs.map((tab) => [tab.id, tab]));
-    const ordered = sidebarOrder.map((id) => tabMap.get(id)).filter(Boolean);
-    const sorted = applySortMode(ordered);
-
+    const ordered = applySortMode(getBaseOrderedTabs());
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return sorted;
+    if (!query) return ordered;
 
-    return sorted.filter((tab) => {
+    return ordered.filter((tab) => {
       const title = (tab.title || "").toLowerCase();
       const url = (tab.url || "").toLowerCase();
       return title.includes(query) || url.includes(query);
@@ -403,12 +429,9 @@
       item.dataset.url = tab.url || "";
       item.dataset.preview = tab.preview || "";
       item.draggable = sortMode === SORT_NONE && !searchQuery.trim();
-
-      const pin = document.createElement("span");
-      pin.className = "tab-pin";
-      pin.title = "Закрепленная вкладка";
-      pin.textContent = "📌";
-      pin.hidden = !tab.pinned;
+      if (dropTargetTabId === tab.id) {
+        item.classList.add(dropInsertAfter ? "drop-after" : "drop-before");
+      }
 
       const iconNode = buildIconNode(tab);
 
@@ -418,6 +441,12 @@
 
       const actions = document.createElement("div");
       actions.className = "tab-actions";
+
+      const pin = document.createElement("span");
+      pin.className = "tab-pin";
+      pin.title = "Закрепленная вкладка";
+      pin.textContent = "📌";
+      pin.hidden = !tab.pinned;
 
       const reloadBtn = document.createElement("button");
       reloadBtn.type = "button";
@@ -433,8 +462,8 @@
       closeBtn.title = "Закрыть вкладку";
       closeBtn.textContent = "✕";
 
-      actions.append(reloadBtn, closeBtn);
-      item.append(pin, iconNode, title, actions);
+      actions.append(pin, reloadBtn, closeBtn);
+      item.append(iconNode, title, actions);
       fragment.append(item);
     });
 
@@ -520,13 +549,19 @@
     return event.clientX > rect.right + 24;
   };
 
-  const collectSortedTabIds = () => applySortMode(allTabs).map((tab) => tab.id);
+  const getSortedOrderIds = () => applySortMode(getBaseOrderedTabs()).map((tab) => tab.id);
+
+  const applyBrowserOrder = async (tabIds) => {
+    const response = await safeSendMessage({ type: "reorderTabs", tabIds });
+    return Boolean(response?.success);
+  };
 
   const restoreBrowserOrderIfNeeded = async () => {
     if (!browserSortApplied || !browserOriginalOrder.length) return true;
-    const response = await safeSendMessage({ type: "reorderTabs", tabIds: browserOriginalOrder });
-    if (!response?.success) return false;
+    const success = await applyBrowserOrder(browserOriginalOrder);
+    if (!success) return false;
     browserSortApplied = false;
+    browserOriginalOrder = [];
     return true;
   };
 
@@ -536,7 +571,7 @@
 
     if (sortMode === SORT_NONE) {
       await restoreBrowserOrderIfNeeded();
-      renderTabs();
+      requestTabs();
       return;
     }
 
@@ -544,12 +579,17 @@
       if (!browserSortApplied) {
         browserOriginalOrder = allTabs.map((tab) => tab.id);
       }
-      const tabIds = collectSortedTabIds();
-      const response = await safeSendMessage({ type: "reorderTabs", tabIds });
-      if (response?.success) {
+      const success = await applyBrowserOrder(getSortedOrderIds());
+      if (success) {
         browserSortApplied = true;
-        requestTabs();
+        await requestTabs();
       }
+      return;
+    }
+
+    if (browserSortApplied) {
+      await restoreBrowserOrderIfNeeded();
+      await requestTabs();
       return;
     }
 
@@ -563,6 +603,20 @@
     sortWithBrowser = false;
     await restoreBrowserOrderIfNeeded();
     requestTabs();
+  };
+
+  const moveTabInArray = (ids, movedId, targetId, insertAfter) => {
+    const fromIndex = ids.indexOf(movedId);
+    const targetIndex = ids.indexOf(targetId);
+    if (fromIndex === -1 || targetIndex === -1) return ids;
+
+    const next = ids.slice();
+    next.splice(fromIndex, 1);
+
+    let insertionIndex = next.indexOf(targetId);
+    if (insertAfter) insertionIndex += 1;
+    next.splice(insertionIndex, 0, movedId);
+    return next;
   };
 
   document.addEventListener("mousemove", (event) => {
@@ -700,29 +754,53 @@
     const item = event.target.closest(".tab-item");
     if (item) item.classList.remove("is-dragging");
     draggedTabId = null;
+    dropTargetTabId = null;
+    dropInsertAfter = false;
+    renderTabs();
   });
 
   list.addEventListener("dragover", (event) => {
-    if (!draggedTabId) return;
-    event.preventDefault();
-  });
-
-  list.addEventListener("drop", (event) => {
     if (!draggedTabId || searchQuery.trim() || sortMode !== SORT_NONE) return;
     event.preventDefault();
+
     const target = event.target.closest(".tab-item");
     if (!target) return;
 
     const targetTabId = Number(target.dataset.tabId);
     if (!targetTabId || targetTabId === draggedTabId) return;
 
-    const fromIndex = sidebarOrder.indexOf(draggedTabId);
-    const toIndex = sidebarOrder.indexOf(targetTabId);
-    if (fromIndex === -1 || toIndex === -1) return;
-
-    sidebarOrder.splice(fromIndex, 1);
-    sidebarOrder.splice(toIndex, 0, draggedTabId);
+    const rect = target.getBoundingClientRect();
+    dropTargetTabId = targetTabId;
+    dropInsertAfter = event.clientY > rect.top + rect.height / 2;
     renderTabs();
+  });
+
+  list.addEventListener("dragleave", (event) => {
+    if (!list.contains(event.relatedTarget)) {
+      dropTargetTabId = null;
+      dropInsertAfter = false;
+      renderTabs();
+    }
+  });
+
+  list.addEventListener("drop", async (event) => {
+    if (!draggedTabId || searchQuery.trim() || sortMode !== SORT_NONE) return;
+    event.preventDefault();
+
+    const target = event.target.closest(".tab-item");
+    if (!target) return;
+
+    const targetTabId = Number(target.dataset.tabId);
+    if (!targetTabId || targetTabId === draggedTabId) return;
+
+    sidebarOrder = moveTabInArray(sidebarOrder, draggedTabId, targetTabId, dropInsertAfter);
+
+    if (sortWithBrowserCheckbox.checked) {
+      await applyBrowserOrder(sidebarOrder);
+      await requestTabs();
+    } else {
+      renderTabs();
+    }
   });
 
   list.addEventListener(
