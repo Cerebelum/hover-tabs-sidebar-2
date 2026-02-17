@@ -3,10 +3,13 @@
   zoom: 1;
   position: fixed;
   top: 0;
+  left: 0;
+  right: auto;
   width: 320px;
   height: 100vh;
-  transform: translateX(-100%);
+  transform: translate3d(-100%, 0, 0);
   transition: transform 0.2s ease;
+  will-change: transform;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
   z-index: 2147483647;
   display: flex;
@@ -14,6 +17,7 @@
   border-right: 1px solid rgba(0, 0, 0, 0.1);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   box-sizing: border-box;
+  line-height: 1.3;
 }
 
 #tab-hover-sidebar *,
@@ -21,12 +25,29 @@
 #tab-hover-sidebar *::after {
   box-sizing: border-box;
   font-family: inherit;
+  color: inherit;
+  text-shadow: none;
 }
 
 #tab-hover-sidebar button,
 #tab-hover-sidebar input,
 #tab-hover-sidebar select {
-  font-family: inherit;
+  font: inherit;
+  color: inherit !important;
+  letter-spacing: normal;
+  text-transform: none;
+  text-indent: 0;
+  text-shadow: none;
+  margin: 0;
+  box-shadow: none;
+  outline: none;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+#tab-hover-sidebar input,
+#tab-hover-sidebar select {
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  background: rgba(127, 127, 127, 0.12);
 }
 
 #tab-hover-sidebar [hidden] {
@@ -41,14 +62,14 @@
 #tab-hover-sidebar.position-right {
   right: 0;
   left: auto;
-  transform: translateX(100%);
+  transform: translate3d(100%, 0, 0);
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.25);
   border-right: none;
   border-left: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 #tab-hover-sidebar.visible {
-  transform: translateX(0);
+  transform: translate3d(0, 0, 0);
 }
 
 #tab-hover-sidebar.no-transition {
@@ -104,11 +125,11 @@
 .sort-apply,
 .sort-reset {
   background: transparent;
-  color: inherit;
+  color: inherit !important;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  -webkit-text-fill-color: currentColor;
+  -webkit-text-fill-color: currentColor !important;
 }
 
 .sidebar-refresh,
@@ -136,16 +157,31 @@
   border-radius: 10px;
   background: rgba(127, 127, 127, 0.16);
   font-size: 13px;
+  overflow: hidden;
 }
 
-.tab-sort-panel label {
+.tab-sort-panel label,
+.tab-settings-panel label {
   display: grid;
   gap: 4px;
+  min-width: 0;
+}
+
+.tab-sort-panel select,
+.tab-sort-panel input,
+.tab-settings-panel select,
+.tab-settings-panel input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 6px;
+  padding: 4px 6px;
 }
 
 .sort-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .sort-apply,
@@ -168,10 +204,12 @@
   align-items: center;
   gap: 10px;
   padding: 0 12px 8px;
+  min-width: 0;
 }
 
 .tab-search {
   flex: 1;
+  min-width: 0;
   height: 34px;
   border-radius: 16px;
   border: 1px solid rgba(127, 127, 127, 0.3);
@@ -217,11 +255,7 @@
   border-radius: 10px;
   background: rgba(127, 127, 127, 0.16);
   font-size: 13px;
-}
-
-.tab-settings-panel label {
-  display: grid;
-  gap: 4px;
+  overflow: hidden;
 }
 
 .tab-settings-panel .settings-checkbox-row,
@@ -231,15 +265,31 @@
   gap: 8px;
 }
 
-.tab-settings-panel input,
-.tab-settings-panel select,
-.tab-sort-panel input,
-.tab-sort-panel select {
-  border: 1px solid rgba(127, 127, 127, 0.4);
+.settings-checkbox-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(127, 127, 127, 0.55);
+  border-radius: 3px;
   background: rgba(127, 127, 127, 0.12);
-  color: inherit;
-  border-radius: 6px;
-  padding: 4px 6px;
+  display: inline-grid;
+  place-content: center;
+  flex-shrink: 0;
+}
+
+.settings-checkbox-row input[type="checkbox"]::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  transform: scale(0);
+  transition: transform 0.1s ease;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+.settings-checkbox-row input[type="checkbox"]:checked::before {
+  transform: scale(1);
 }
 
 #tab-hover-sidebar.theme-dark .tab-settings-panel select,
@@ -288,10 +338,6 @@
   cursor: pointer;
 }
 
-.tab-item[draggable="true"]:active {
-  cursor: grabbing;
-}
-
 .tab-item.drop-before::before,
 .tab-item.drop-after::after {
   content: "";
@@ -309,14 +355,6 @@
 
 .tab-item.drop-after::after {
   bottom: -1px;
-}
-
-.tab-item.is-dragging {
-  opacity: 0.45;
-}
-
-.tab-item[draggable="true"] {
-  cursor: grab;
 }
 
 .tab-item.is-dragging {
@@ -351,6 +389,7 @@
   font-size: 12px;
   opacity: 0.9;
   flex-shrink: 0;
+  margin-left: 2px;
 }
 
 .tab-title {

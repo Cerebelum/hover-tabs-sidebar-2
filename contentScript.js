@@ -165,26 +165,30 @@
 
   const applySidebarPlacement = () => {
     const targetSide = getTargetSide();
-    sidebar.classList.remove("position-left", "position-right", "theme-dark", "theme-light");
-    sidebar.classList.add(`position-${targetSide}`);
-    sidebar.classList.add(`theme-${settings.theme}`);
+    sidebar.classList.toggle("position-left", targetSide === "left");
+    sidebar.classList.toggle("position-right", targetSide === "right");
+    sidebar.classList.toggle("theme-dark", settings.theme === "dark");
+    sidebar.classList.toggle("theme-light", settings.theme === "light");
     sidebar.style.width = `${settings.width}px`;
   };
 
   const switchSidebarSideWithoutJank = (nextSide) => {
     if (nextSide === currentSide) return;
     const wasVisible = sidebarVisible;
+
+    sidebar.classList.add("no-transition");
     if (wasVisible) {
-      sidebar.classList.add("no-transition");
       sidebar.classList.remove("visible");
     }
+
     currentSide = nextSide;
     applySidebarPlacement();
+    void sidebar.offsetWidth;
+
     if (wasVisible) {
-      void sidebar.offsetWidth;
       sidebar.classList.add("visible");
-      requestAnimationFrame(() => sidebar.classList.remove("no-transition"));
     }
+    requestAnimationFrame(() => sidebar.classList.remove("no-transition"));
   };
 
   const applyZoomCompensation = (zoomFactor) => {
@@ -462,8 +466,8 @@
       closeBtn.title = "Закрыть вкладку";
       closeBtn.textContent = "✕";
 
-      actions.append(pin, reloadBtn, closeBtn);
-      item.append(iconNode, title, actions);
+      actions.append(reloadBtn, closeBtn);
+      item.append(iconNode, title, pin, actions);
       fragment.append(item);
     });
 
@@ -619,6 +623,20 @@
     return next;
   };
 
+  const clearDropIndicator = () => {
+    list.querySelectorAll(".tab-item.drop-before, .tab-item.drop-after").forEach((item) => {
+      item.classList.remove("drop-before", "drop-after");
+    });
+  };
+
+  const updateDropIndicator = () => {
+    clearDropIndicator();
+    if (!dropTargetTabId) return;
+    const targetItem = list.querySelector(`.tab-item[data-tab-id="${dropTargetTabId}"]`);
+    if (!targetItem) return;
+    targetItem.classList.add(dropInsertAfter ? "drop-after" : "drop-before");
+  };
+
   document.addEventListener("mousemove", (event) => {
     const triggerSide = getTriggerSide(event);
     if (triggerSide) {
@@ -756,7 +774,7 @@
     draggedTabId = null;
     dropTargetTabId = null;
     dropInsertAfter = false;
-    renderTabs();
+    clearDropIndicator();
   });
 
   list.addEventListener("dragover", (event) => {
@@ -770,16 +788,19 @@
     if (!targetTabId || targetTabId === draggedTabId) return;
 
     const rect = target.getBoundingClientRect();
+    const nextInsertAfter = event.clientY > rect.top + rect.height / 2;
+    if (dropTargetTabId === targetTabId && dropInsertAfter === nextInsertAfter) return;
+
     dropTargetTabId = targetTabId;
-    dropInsertAfter = event.clientY > rect.top + rect.height / 2;
-    renderTabs();
+    dropInsertAfter = nextInsertAfter;
+    updateDropIndicator();
   });
 
   list.addEventListener("dragleave", (event) => {
     if (!list.contains(event.relatedTarget)) {
       dropTargetTabId = null;
       dropInsertAfter = false;
-      renderTabs();
+      clearDropIndicator();
     }
   });
 
@@ -787,19 +808,25 @@
     if (!draggedTabId || searchQuery.trim() || sortMode !== SORT_NONE) return;
     event.preventDefault();
 
-    const target = event.target.closest(".tab-item");
-    if (!target) return;
+    try {
+      const target = event.target.closest(".tab-item");
+      if (!target) return;
 
-    const targetTabId = Number(target.dataset.tabId);
-    if (!targetTabId || targetTabId === draggedTabId) return;
+      const targetTabId = Number(target.dataset.tabId);
+      if (!targetTabId || targetTabId === draggedTabId) return;
 
-    sidebarOrder = moveTabInArray(sidebarOrder, draggedTabId, targetTabId, dropInsertAfter);
+      sidebarOrder = moveTabInArray(sidebarOrder, draggedTabId, targetTabId, dropInsertAfter);
 
-    if (sortWithBrowserCheckbox.checked) {
-      await applyBrowserOrder(sidebarOrder);
-      await requestTabs();
-    } else {
-      renderTabs();
+      if (sortWithBrowserCheckbox.checked) {
+        await applyBrowserOrder(sidebarOrder);
+        await requestTabs();
+      } else {
+        renderTabs();
+      }
+    } finally {
+      dropTargetTabId = null;
+      dropInsertAfter = false;
+      clearDropIndicator();
     }
   });
 
