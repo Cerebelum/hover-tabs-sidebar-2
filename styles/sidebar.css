@@ -3,10 +3,13 @@
   zoom: 1;
   position: fixed;
   top: 0;
+  left: 0;
+  right: auto;
   width: 320px;
   height: 100vh;
   transform: translateX(-100%);
   transition: transform 0.2s ease;
+  will-change: transform;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
   z-index: 2147483647;
   display: flex;
@@ -21,6 +24,7 @@
 #tab-hover-sidebar *::after {
   box-sizing: border-box;
   font-family: inherit;
+  color: inherit;
 }
 
 #tab-hover-sidebar button,
@@ -104,11 +108,11 @@
 .sort-apply,
 .sort-reset {
   background: transparent;
-  color: inherit;
+  color: inherit !important;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  -webkit-text-fill-color: currentColor;
+  -webkit-text-fill-color: currentColor !important;
 }
 
 .sidebar-refresh,
@@ -288,10 +292,6 @@
   cursor: pointer;
 }
 
-.tab-item[draggable="true"]:active {
-  cursor: grabbing;
-}
-
 .tab-item.drop-before::before,
 .tab-item.drop-after::after {
   content: "";
@@ -309,14 +309,6 @@
 
 .tab-item.drop-after::after {
   bottom: -1px;
-}
-
-.tab-item.is-dragging {
-  opacity: 0.45;
-}
-
-.tab-item[draggable="true"] {
-  cursor: grab;
 }
 
 .tab-item.is-dragging {
@@ -351,6 +343,7 @@
   font-size: 12px;
   opacity: 0.9;
   flex-shrink: 0;
+  margin-left: 2px;
 }
 
 .tab-title {
