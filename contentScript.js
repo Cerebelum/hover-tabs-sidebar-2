@@ -175,17 +175,20 @@
   const switchSidebarSideWithoutJank = (nextSide) => {
     if (nextSide === currentSide) return;
     const wasVisible = sidebarVisible;
+
+    sidebar.classList.add("no-transition");
     if (wasVisible) {
-      sidebar.classList.add("no-transition");
       sidebar.classList.remove("visible");
     }
+
     currentSide = nextSide;
     applySidebarPlacement();
+    void sidebar.offsetWidth;
+
     if (wasVisible) {
-      void sidebar.offsetWidth;
       sidebar.classList.add("visible");
-      requestAnimationFrame(() => sidebar.classList.remove("no-transition"));
     }
+    requestAnimationFrame(() => sidebar.classList.remove("no-transition"));
   };
 
   const applyZoomCompensation = (zoomFactor) => {
