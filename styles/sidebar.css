@@ -258,6 +258,30 @@
   overflow: hidden;
 }
 
+.settings-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-bottom: 2px;
+}
+
+.settings-help {
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border: 1px solid rgba(127, 127, 127, 0.45) !important;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+.settings-help:hover {
+  background: rgba(127, 127, 127, 0.22);
+}
+
 .tab-settings-panel .settings-checkbox-row,
 .tab-sort-panel .settings-checkbox-row {
   display: flex;
@@ -279,17 +303,21 @@
 }
 
 .settings-checkbox-row input[type="checkbox"]::before {
-  content: "";
-  width: 8px;
-  height: 8px;
+  content: "✓";
   transform: scale(0);
   transition: transform 0.1s ease;
-  background: currentColor;
-  border-radius: 2px;
+  color: #3ea6ff;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .settings-checkbox-row input[type="checkbox"]:checked::before {
   transform: scale(1);
+}
+
+.settings-checkbox-row input[type="checkbox"]:checked {
+  border-color: #3ea6ff;
+  background: rgba(62, 166, 255, 0.14);
 }
 
 #tab-hover-sidebar.theme-dark .tab-settings-panel select,

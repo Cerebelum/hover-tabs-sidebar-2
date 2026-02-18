@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Hover Tabs Sidebar",
   "description": "Боковая панель с вкладками при наведении на край экрана.",
-  "version": "1.2.0",
-  "permissions": ["tabs", "storage", "favicon"],
+  "version": "1.3.0",
+  "permissions": ["tabs", "storage", "favicon", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
@@ -17,6 +17,13 @@
     }
   ],
   "action": {
-    "default_title": "Hover Tabs Sidebar"
+    "default_title": "Hover Tabs Sidebar",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }
