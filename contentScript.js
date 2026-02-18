@@ -4,6 +4,7 @@
 
   const EDGE_TRIGGER_PX = 16;
   const SAFE_ICON_CACHE = new Map();
+  const SORT_NONE = "none";
   const DEFAULT_SETTINGS = {
     showPreview: true,
     position: "left",
@@ -22,6 +23,16 @@
   let searchQuery = "";
   let settings = { ...DEFAULT_SETTINGS };
   let keepOpenUntil = 0;
+  let currentZoomFactor = 1;
+  let currentSide = "left";
+  let sortMode = SORT_NONE;
+  let sortWithBrowser = false;
+  let sidebarOrder = [];
+  let browserOriginalOrder = [];
+  let browserSortApplied = false;
+  let draggedTabId = null;
+  let dropTargetTabId = null;
+  let dropInsertAfter = false;
 
   const safeSendMessage = (payload) =>
     new Promise((resolve) => {
@@ -69,14 +80,31 @@
       <span class="header-title">Вкладки</span>
       <div class="header-actions">
         <button type="button" class="sidebar-refresh" title="Обновить список">↻</button>
+        <button type="button" class="sidebar-sort" title="Сортировка">⇅</button>
         <button type="button" class="sidebar-settings" title="Настройки">⚙</button>
+      </div>
+    </div>
+    <div class="tab-sort-panel" hidden>
+      <label>Тип сортировки
+        <select class="sort-mode-select">
+          <option value="none">Без сортировки</option>
+          <option value="domainAsc">Домен (А-Я)</option>
+          <option value="domainDesc">Домен (Я-А)</option>
+          <option value="lastViewedAsc">Последний просмотр (старые → новые)</option>
+          <option value="lastViewedDesc">Последний просмотр (новые → старые)</option>
+        </select>
+      </label>
+      <label class="settings-checkbox-row"><input type="checkbox" class="sort-with-browser" /> Сортировать и стандартные вкладки Chrome</label>
+      <div class="sort-actions">
+        <button type="button" class="sort-apply">Применить</button>
+        <button type="button" class="sort-reset">Сбросить</button>
       </div>
     </div>
     <div class="tab-sidebar-warning" hidden>
       Панель может отображаться некорректно. Обновите текущую вкладку.
     </div>
     <div class="tab-sidebar-toolbar">
-      <input type="search" class="tab-search" placeholder="Поиск вкладок" aria-label="Поиск вкладок" />
+      <input type="text" class="tab-search" placeholder="Поиск вкладок" aria-label="Поиск вкладок" />
       <button type="button" class="tab-search-clear" title="Очистить поиск" aria-label="Очистить поиск" hidden>✕</button>
       <span class="tabs-count">0</span>
     </div>
@@ -110,7 +138,13 @@
   document.documentElement.appendChild(sidebar);
 
   const refreshButton = sidebar.querySelector(".sidebar-refresh");
+  const sortButton = sidebar.querySelector(".sidebar-sort");
   const settingsButton = sidebar.querySelector(".sidebar-settings");
+  const sortPanel = sidebar.querySelector(".tab-sort-panel");
+  const sortModeSelect = sidebar.querySelector(".sort-mode-select");
+  const sortWithBrowserCheckbox = sidebar.querySelector(".sort-with-browser");
+  const sortApplyButton = sidebar.querySelector(".sort-apply");
+  const sortResetButton = sidebar.querySelector(".sort-reset");
   const searchInput = sidebar.querySelector(".tab-search");
   const searchClearButton = sidebar.querySelector(".tab-search-clear");
   const counter = sidebar.querySelector(".tabs-count");
@@ -127,11 +161,40 @@
   const preview = sidebar.querySelector(".tab-preview");
   const tooltip = sidebar.querySelector(".tab-tooltip");
 
+  const getTargetSide = () => (settings.position === "both" ? currentSide : settings.position);
+
   const applySidebarPlacement = () => {
-    sidebar.classList.remove("position-left", "position-right", "theme-dark", "theme-light");
-    sidebar.classList.add(`position-${settings.position === "both" ? "left" : settings.position}`);
-    sidebar.classList.add(`theme-${settings.theme}`);
+    const targetSide = getTargetSide();
+    sidebar.classList.toggle("position-left", targetSide === "left");
+    sidebar.classList.toggle("position-right", targetSide === "right");
+    sidebar.classList.toggle("theme-dark", settings.theme === "dark");
+    sidebar.classList.toggle("theme-light", settings.theme === "light");
     sidebar.style.width = `${settings.width}px`;
+  };
+
+  const switchSidebarSideWithoutJank = (nextSide) => {
+    if (nextSide === currentSide) return;
+    const wasVisible = sidebarVisible;
+
+    sidebar.classList.add("no-transition");
+    if (wasVisible) {
+      sidebar.classList.remove("visible");
+    }
+
+    currentSide = nextSide;
+    applySidebarPlacement();
+    void sidebar.offsetWidth;
+
+    if (wasVisible) {
+      sidebar.classList.add("visible");
+    }
+    requestAnimationFrame(() => sidebar.classList.remove("no-transition"));
+  };
+
+  const applyZoomCompensation = (zoomFactor) => {
+    const parsedFactor = Number(zoomFactor);
+    currentZoomFactor = Number.isFinite(parsedFactor) && parsedFactor > 0 ? parsedFactor : 1;
+    sidebar.style.zoom = String(1 / currentZoomFactor);
   };
 
   const saveSettings = async () => {
@@ -194,8 +257,12 @@
     hideTimer = setTimeout(() => hideSidebar(), Math.max(0, Number(settings.hideDelay) || 0));
   };
 
-  const showSidebar = () => {
+  const showSidebar = (side) => {
     cancelShow();
+    if (side && settings.position === "both") {
+      switchSidebarSideWithoutJank(side);
+    }
+
     if (sidebarVisible) return;
     const delay = Math.max(0, Number(settings.showDelay) || 0);
     showTimer = setTimeout(() => {
@@ -209,12 +276,22 @@
     if (!sidebarVisible) return;
     if (!force) {
       const active = document.activeElement;
-      if (active && sidebar.contains(active)) return;
+      if (active && sidebar.contains(active) && sidebar.matches(":hover")) return;
     }
     sidebarVisible = false;
     sidebar.classList.remove("visible");
     hidePreview();
     settingsPanel.hidden = true;
+    sortPanel.hidden = true;
+  };
+
+  const reconcileSidebarOrder = () => {
+    const presentIds = allTabs.map((tab) => tab.id);
+    const presentSet = new Set(presentIds);
+    sidebarOrder = sidebarOrder.filter((tabId) => presentSet.has(tabId));
+    presentIds.forEach((id) => {
+      if (!sidebarOrder.includes(id)) sidebarOrder.push(id);
+    });
   };
 
   const requestTabs = async () => {
@@ -229,6 +306,8 @@
 
     warningBox.hidden = true;
     allTabs = response.tabs || [];
+    reconcileSidebarOrder();
+    applyZoomCompensation(response.zoomFactor);
     renderTabs();
   };
 
@@ -240,40 +319,91 @@
     return fallback;
   };
 
-  const buildIconNode = (tab) => {
-    if (!tab.favIconUrl) return buildFallbackIcon(tab.title);
-
-    if (!needsSanitization(tab.favIconUrl)) {
-      const icon = document.createElement("img");
-      icon.className = "tab-icon";
-      icon.alt = "";
-      icon.decoding = "async";
-      icon.referrerPolicy = "no-referrer";
-      icon.src = tab.favIconUrl;
-      return icon;
-    }
-
-    const placeholder = buildFallbackIcon(tab.title);
-    getSafeIconUrl(tab.favIconUrl)
-      .then((safeUrl) => {
-        if (!safeUrl) return;
-        const icon = document.createElement("img");
-        icon.className = "tab-icon";
-        icon.alt = "";
-        icon.decoding = "async";
-        icon.referrerPolicy = "no-referrer";
-        icon.src = safeUrl;
-        placeholder.replaceWith(icon);
-      })
-      .catch(() => {});
-
-    return placeholder;
+  const createIconImage = (src) => {
+    const icon = document.createElement("img");
+    icon.className = "tab-icon";
+    icon.alt = "";
+    icon.decoding = "async";
+    icon.referrerPolicy = "no-referrer";
+    icon.src = src;
+    return icon;
   };
 
-  const getFilteredTabs = () => {
+  const buildIconNode = (tab) => {
+    const fallback = buildFallbackIcon(tab.title);
+    const rawSources = [tab.favIconUrl, tab.extensionFavIconUrl].filter(Boolean);
+    if (!rawSources.length) return fallback;
+
+    const applySource = (sourceIndex) => {
+      if (sourceIndex >= rawSources.length) return;
+      const source = rawSources[sourceIndex];
+      getSafeIconUrl(source)
+        .then((safeUrl) => {
+          if (!safeUrl || !fallback.isConnected) {
+            applySource(sourceIndex + 1);
+            return;
+          }
+          const icon = createIconImage(safeUrl);
+          icon.addEventListener("error", () => {
+            if (!fallback.isConnected && icon.isConnected) {
+              icon.replaceWith(fallback);
+            }
+            applySource(sourceIndex + 1);
+          });
+          if (fallback.isConnected) {
+            fallback.replaceWith(icon);
+          }
+        })
+        .catch(() => applySource(sourceIndex + 1));
+    };
+
+    setTimeout(() => applySource(0), 0);
+    return fallback;
+  };
+
+  const getDomain = (url) => {
+    try {
+      return new URL(url).hostname || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const getBaseOrderedTabs = () => {
+    const tabMap = new Map(allTabs.map((tab) => [tab.id, tab]));
+    return sidebarOrder.map((id) => tabMap.get(id)).filter(Boolean);
+  };
+
+  const sortUnpinnedTabs = (tabs) => {
+    if (sortMode === SORT_NONE) return tabs;
+    const sorted = tabs.slice();
+
+    if (sortMode === "domainAsc") {
+      sorted.sort((a, b) => getDomain(a.url).localeCompare(getDomain(b.url), "ru", { sensitivity: "base" }));
+    } else if (sortMode === "domainDesc") {
+      sorted.sort((a, b) => getDomain(b.url).localeCompare(getDomain(a.url), "ru", { sensitivity: "base" }));
+    } else if (sortMode === "lastViewedAsc") {
+      sorted.sort((a, b) => (a.lastAccessed || 0) - (b.lastAccessed || 0));
+    } else if (sortMode === "lastViewedDesc") {
+      sorted.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+    }
+
+    return sorted;
+  };
+
+  const applySortMode = (tabs) => {
+    if (sortMode === SORT_NONE) return tabs;
+    const pinned = tabs.filter((tab) => tab.pinned);
+    const unpinned = tabs.filter((tab) => !tab.pinned);
+    return [...pinned, ...sortUnpinnedTabs(unpinned)];
+  };
+
+  const getDisplayTabs = () => {
+    const ordered = applySortMode(getBaseOrderedTabs());
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return allTabs;
-    return allTabs.filter((tab) => {
+    if (!query) return ordered;
+
+    return ordered.filter((tab) => {
       const title = (tab.title || "").toLowerCase();
       const url = (tab.url || "").toLowerCase();
       return title.includes(query) || url.includes(query);
@@ -281,7 +411,7 @@
   };
 
   const renderTabs = () => {
-    const tabs = getFilteredTabs();
+    const tabs = getDisplayTabs();
     counter.textContent = String(tabs.length);
     list.innerHTML = "";
 
@@ -302,6 +432,10 @@
       item.dataset.title = tab.title || "Без названия";
       item.dataset.url = tab.url || "";
       item.dataset.preview = tab.preview || "";
+      item.draggable = sortMode === SORT_NONE && !searchQuery.trim();
+      if (dropTargetTabId === tab.id) {
+        item.classList.add(dropInsertAfter ? "drop-after" : "drop-before");
+      }
 
       const iconNode = buildIconNode(tab);
 
@@ -311,6 +445,12 @@
 
       const actions = document.createElement("div");
       actions.className = "tab-actions";
+
+      const pin = document.createElement("span");
+      pin.className = "tab-pin";
+      pin.title = "Закрепленная вкладка";
+      pin.textContent = "📌";
+      pin.hidden = !tab.pinned;
 
       const reloadBtn = document.createElement("button");
       reloadBtn.type = "button";
@@ -327,7 +467,7 @@
       closeBtn.textContent = "✕";
 
       actions.append(reloadBtn, closeBtn);
-      item.append(iconNode, title, actions);
+      item.append(iconNode, title, pin, actions);
       fragment.append(item);
     });
 
@@ -396,23 +536,111 @@
     preview.classList.add("visible");
   };
 
-  const pointerOnTrigger = (event) => {
-    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX;
-    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX;
-    return event.clientX <= EDGE_TRIGGER_PX || event.clientX >= window.innerWidth - EDGE_TRIGGER_PX;
+  const getTriggerSide = (event) => {
+    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX ? "left" : "";
+    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX ? "right" : "";
+    if (event.clientX <= EDGE_TRIGGER_PX) return "left";
+    if (event.clientX >= window.innerWidth - EDGE_TRIGGER_PX) return "right";
+    return "";
   };
 
   const shouldHideOnMove = (event) => {
     const rect = sidebar.getBoundingClientRect();
-    if (settings.position === "right") {
+    const side = getTargetSide();
+    if (side === "right") {
       return event.clientX < rect.left - 24;
     }
     return event.clientX > rect.right + 24;
   };
 
+  const getSortedOrderIds = () => applySortMode(getBaseOrderedTabs()).map((tab) => tab.id);
+
+  const applyBrowserOrder = async (tabIds) => {
+    const response = await safeSendMessage({ type: "reorderTabs", tabIds });
+    return Boolean(response?.success);
+  };
+
+  const restoreBrowserOrderIfNeeded = async () => {
+    if (!browserSortApplied || !browserOriginalOrder.length) return true;
+    const success = await applyBrowserOrder(browserOriginalOrder);
+    if (!success) return false;
+    browserSortApplied = false;
+    browserOriginalOrder = [];
+    return true;
+  };
+
+  const applySort = async () => {
+    sortMode = sortModeSelect.value;
+    sortWithBrowser = sortWithBrowserCheckbox.checked;
+
+    if (sortMode === SORT_NONE) {
+      await restoreBrowserOrderIfNeeded();
+      requestTabs();
+      return;
+    }
+
+    if (sortWithBrowser) {
+      if (!browserSortApplied) {
+        browserOriginalOrder = allTabs.map((tab) => tab.id);
+      }
+      const success = await applyBrowserOrder(getSortedOrderIds());
+      if (success) {
+        browserSortApplied = true;
+        await requestTabs();
+      }
+      return;
+    }
+
+    if (browserSortApplied) {
+      await restoreBrowserOrderIfNeeded();
+      await requestTabs();
+      return;
+    }
+
+    renderTabs();
+  };
+
+  const resetSort = async () => {
+    sortMode = SORT_NONE;
+    sortModeSelect.value = SORT_NONE;
+    sortWithBrowserCheckbox.checked = false;
+    sortWithBrowser = false;
+    await restoreBrowserOrderIfNeeded();
+    requestTabs();
+  };
+
+  const moveTabInArray = (ids, movedId, targetId, insertAfter) => {
+    const fromIndex = ids.indexOf(movedId);
+    const targetIndex = ids.indexOf(targetId);
+    if (fromIndex === -1 || targetIndex === -1) return ids;
+
+    const next = ids.slice();
+    next.splice(fromIndex, 1);
+
+    let insertionIndex = next.indexOf(targetId);
+    if (insertAfter) insertionIndex += 1;
+    next.splice(insertionIndex, 0, movedId);
+    return next;
+  };
+
+  const clearDropIndicator = () => {
+    list.querySelectorAll(".tab-item.drop-before, .tab-item.drop-after").forEach((item) => {
+      item.classList.remove("drop-before", "drop-after");
+    });
+  };
+
+  const updateDropIndicator = () => {
+    clearDropIndicator();
+    if (!dropTargetTabId) return;
+    const targetItem = list.querySelector(`.tab-item[data-tab-id="${dropTargetTabId}"]`);
+    if (!targetItem) return;
+    targetItem.classList.add(dropInsertAfter ? "drop-after" : "drop-before");
+  };
+
   document.addEventListener("mousemove", (event) => {
-    if (pointerOnTrigger(event)) {
-      showSidebar();
+    const triggerSide = getTriggerSide(event);
+    if (triggerSide) {
+      showSidebar(triggerSide);
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       scheduleHide();
     }
@@ -433,6 +661,11 @@
     hideSidebar(true);
   });
 
+  document.addEventListener("focusin", (event) => {
+    if (!sidebarVisible || sidebar.contains(event.target)) return;
+    hideSidebar(true);
+  });
+
   sidebar.addEventListener("mouseenter", () => {
     cancelHide();
     cancelShow();
@@ -445,8 +678,22 @@
 
   refreshButton.addEventListener("click", () => requestTabs());
 
+  sortButton.addEventListener("click", () => {
+    sortPanel.hidden = !sortPanel.hidden;
+    settingsPanel.hidden = true;
+  });
+
+  sortApplyButton.addEventListener("click", () => {
+    applySort();
+  });
+
+  sortResetButton.addEventListener("click", () => {
+    resetSort();
+  });
+
   settingsButton.addEventListener("click", () => {
     settingsPanel.hidden = !settingsPanel.hidden;
+    sortPanel.hidden = true;
   });
 
   previewToggle.addEventListener("change", () => {
@@ -510,6 +757,79 @@
     handleAction("activate", tabId);
   });
 
+  list.addEventListener("dragstart", (event) => {
+    const item = event.target.closest(".tab-item");
+    if (!item || !item.draggable) return;
+    draggedTabId = Number(item.dataset.tabId);
+    item.classList.add("is-dragging");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(draggedTabId));
+    }
+  });
+
+  list.addEventListener("dragend", (event) => {
+    const item = event.target.closest(".tab-item");
+    if (item) item.classList.remove("is-dragging");
+    draggedTabId = null;
+    dropTargetTabId = null;
+    dropInsertAfter = false;
+    clearDropIndicator();
+  });
+
+  list.addEventListener("dragover", (event) => {
+    if (!draggedTabId || searchQuery.trim() || sortMode !== SORT_NONE) return;
+    event.preventDefault();
+
+    const target = event.target.closest(".tab-item");
+    if (!target) return;
+
+    const targetTabId = Number(target.dataset.tabId);
+    if (!targetTabId || targetTabId === draggedTabId) return;
+
+    const rect = target.getBoundingClientRect();
+    const nextInsertAfter = event.clientY > rect.top + rect.height / 2;
+    if (dropTargetTabId === targetTabId && dropInsertAfter === nextInsertAfter) return;
+
+    dropTargetTabId = targetTabId;
+    dropInsertAfter = nextInsertAfter;
+    updateDropIndicator();
+  });
+
+  list.addEventListener("dragleave", (event) => {
+    if (!list.contains(event.relatedTarget)) {
+      dropTargetTabId = null;
+      dropInsertAfter = false;
+      clearDropIndicator();
+    }
+  });
+
+  list.addEventListener("drop", async (event) => {
+    if (!draggedTabId || searchQuery.trim() || sortMode !== SORT_NONE) return;
+    event.preventDefault();
+
+    try {
+      const target = event.target.closest(".tab-item");
+      if (!target) return;
+
+      const targetTabId = Number(target.dataset.tabId);
+      if (!targetTabId || targetTabId === draggedTabId) return;
+
+      sidebarOrder = moveTabInArray(sidebarOrder, draggedTabId, targetTabId, dropInsertAfter);
+
+      if (sortWithBrowserCheckbox.checked) {
+        await applyBrowserOrder(sidebarOrder);
+        await requestTabs();
+      } else {
+        renderTabs();
+      }
+    } finally {
+      dropTargetTabId = null;
+      dropInsertAfter = false;
+      clearDropIndicator();
+    }
+  });
+
   list.addEventListener(
     "mousemove",
     (event) => {
@@ -524,6 +844,12 @@
   );
 
   list.addEventListener("mouseleave", () => hidePreview());
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "zoomChanged") {
+      applyZoomCompensation(message.zoomFactor);
+    }
+  });
 
   list.addEventListener(
     "wheel",
@@ -547,7 +873,7 @@
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidebar.getBoundingClientRect().width;
-    const resizeFromRight = settings.position === "right";
+    const resizeFromRight = getTargetSide() === "right";
 
     const onMove = (moveEvent) => {
       const delta = moveEvent.clientX - startX;
@@ -566,5 +892,11 @@
     document.addEventListener("mouseup", onUp);
   });
 
-  loadSettings().finally(requestTabs);
+  loadSettings().finally(async () => {
+    const zoomResponse = await safeSendMessage({ type: "getZoom" });
+    if (zoomResponse?.success) {
+      applyZoomCompensation(zoomResponse.zoomFactor);
+    }
+    requestTabs();
+  });
 })();

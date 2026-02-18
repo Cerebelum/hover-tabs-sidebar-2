@@ -1,6 +1,11 @@
 const faviconCache = new Map();
 const tabPreviewCache = new Map();
 
+const buildExtensionFaviconUrl = (tabUrl) => {
+  if (!tabUrl || typeof tabUrl !== "string") return "";
+  return `${chrome.runtime.getURL("/_favicon/")}?pageUrl=${encodeURIComponent(tabUrl)}&size=32`;
+};
+
 const reply = (sendResponse, data = {}, error) => {
   sendResponse(error ? { success: false, error } : { success: true, ...data });
 };
@@ -36,6 +41,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabPreviewCache.delete(tabId);
 });
 
+chrome.tabs.onZoomChange.addListener(({ tabId, newZoomFactor }) => {
+  if (!tabId || !newZoomFactor) return;
+  chrome.tabs.sendMessage(tabId, { type: "zoomChanged", zoomFactor: newZoomFactor }, () => {
+    void chrome.runtime.lastError;
+  });
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, tabId, url } = message;
 
@@ -49,18 +61,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
-      const payload = tabs.map(({ id, title, url: tabUrl, favIconUrl, active }) => ({
+      const payload = tabs.map(({ id, title, url: tabUrl, favIconUrl, active, pinned, lastAccessed }) => ({
         id,
         title,
         url: tabUrl,
         favIconUrl,
+        extensionFavIconUrl: buildExtensionFaviconUrl(tabUrl),
         active,
+        pinned,
+        lastAccessed: Number(lastAccessed) || 0,
         preview: tabPreviewCache.get(id) || "",
       }));
 
-      reply(sendResponse, { tabs: payload });
+      const resolveTabs = (zoomFactor = 1) => {
+        reply(sendResponse, { tabs: payload, zoomFactor });
+      };
+
+      if (sender?.tab?.id) {
+        chrome.tabs.getZoom(sender.tab.id, (zoomFactor) => {
+          if (chrome.runtime.lastError?.message) {
+            resolveTabs(1);
+            return;
+          }
+          resolveTabs(zoomFactor || 1);
+        });
+        return;
+      }
+
+      resolveTabs(1);
     });
 
+    return true;
+  }
+
+  if (type === "getZoom") {
+    if (!sender?.tab?.id) {
+      reply(sendResponse, { zoomFactor: 1 });
+      return false;
+    }
+
+    chrome.tabs.getZoom(sender.tab.id, (zoomFactor) => {
+      reply(sendResponse, { zoomFactor: chrome.runtime.lastError?.message ? 1 : zoomFactor || 1 });
+    });
     return true;
   }
 
@@ -82,6 +124,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.remove(tabId, () => {
       reply(sendResponse, {}, chrome.runtime.lastError?.message);
     });
+    return true;
+  }
+
+  if (type === "reorderTabs" && Array.isArray(message.tabIds)) {
+    const queryInfo = sender?.tab?.windowId ? { windowId: sender.tab.windowId } : { currentWindow: true };
+
+    chrome.tabs.query(queryInfo, (tabs) => {
+      const err = chrome.runtime.lastError?.message;
+      if (err) {
+        reply(sendResponse, {}, err);
+        return;
+      }
+
+      const tabMap = new Map(tabs.map((tab) => [tab.id, tab]));
+      const orderedTabs = message.tabIds.map((id) => tabMap.get(id)).filter(Boolean);
+
+      if (!orderedTabs.length) {
+        reply(sendResponse, {}, "Нет вкладок для сортировки.");
+        return;
+      }
+
+      let nextIndex = Math.min(...orderedTabs.map((tab) => tab.index));
+
+      const moveNext = (i) => {
+        if (i >= orderedTabs.length) {
+          reply(sendResponse, {});
+          return;
+        }
+        const tab = orderedTabs[i];
+        chrome.tabs.move(tab.id, { index: nextIndex }, () => {
+          const moveError = chrome.runtime.lastError?.message;
+          if (moveError) {
+            reply(sendResponse, {}, moveError);
+            return;
+          }
+          nextIndex += 1;
+          moveNext(i + 1);
+        });
+      };
+
+      moveNext(0);
+    });
+
     return true;
   }
 
