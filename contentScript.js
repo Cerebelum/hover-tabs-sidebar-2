@@ -2,16 +2,19 @@
   if (window.__tabHoverSidebarInit) return;
   window.__tabHoverSidebarInit = true;
 
-  const EDGE_TRIGGER_PX = 16;
+  const SETTINGS_TOOLTIP_DELAY_MS = 350;
   const SAFE_ICON_CACHE = new Map();
   const SORT_NONE = "none";
   const DEFAULT_SETTINGS = {
     showPreview: true,
     position: "left",
     showDelay: 0,
-    hideDelay: 220,
+    hideDelay: 0,
     theme: "dark",
     width: 320,
+    edgeSensitivity: 8,
+    ignoreScrollbarHover: true,
+    edgeHoverDelay: 120,
   };
 
   let sidebarVisible = false;
@@ -33,6 +36,10 @@
   let draggedTabId = null;
   let dropTargetTabId = null;
   let dropInsertAfter = false;
+  let extensionEnabled = true;
+  let edgeHoverTimer = null;
+  let edgeHoverSide = "";
+  let settingsTooltipTimer = null;
 
   const safeSendMessage = (payload) =>
     new Promise((resolve) => {
@@ -85,7 +92,7 @@
       </div>
     </div>
     <div class="tab-sort-panel" hidden>
-      <label>Тип сортировки
+      <label>Тип сортировки <button type="button" class="settings-help" data-tooltip="Выберите правило автоматической сортировки списка вкладок.">?</button>
         <select class="sort-mode-select">
           <option value="none">Без сортировки</option>
           <option value="domainAsc">Домен (А-Я)</option>
@@ -94,7 +101,7 @@
           <option value="lastViewedDesc">Последний просмотр (новые → старые)</option>
         </select>
       </label>
-      <label class="settings-checkbox-row"><input type="checkbox" class="sort-with-browser" /> Сортировать и стандартные вкладки Chrome</label>
+      <label class="settings-checkbox-row"><input type="checkbox" class="sort-with-browser" /> Сортировать и стандартные вкладки Chrome <button type="button" class="settings-help" data-tooltip="Если включено, сортировка применяется и к системному порядку вкладок браузера.">?</button></label>
       <div class="sort-actions">
         <button type="button" class="sort-apply">Применить</button>
         <button type="button" class="sort-reset">Сбросить</button>
@@ -109,21 +116,29 @@
       <span class="tabs-count">0</span>
     </div>
     <div class="tab-settings-panel" hidden>
-      <label class="settings-checkbox-row"><input type="checkbox" class="settings-preview-toggle" /> Показывать превью</label>
-      <label>Позиция
+      <div class="settings-group-title">Активация панели</div>
+      <label>Чувствительность края (px) <button type="button" class="settings-help" data-tooltip="Ширина зоны у края экрана, где срабатывает панель.">?</button>
+        <input type="number" class="settings-edge-sensitivity" min="0" max="48" step="1" />
+      </label>
+      <label class="settings-checkbox-row"><input type="checkbox" class="settings-ignore-scrollbar" /> Игнорировать наведение на полосу прокрутки <button type="button" class="settings-help" data-tooltip="Если курсор на системной полосе прокрутки, панель не открывается. При блокировке панель можно открыть через контекстное меню страницы.">?</button></label>
+      <label>Задержка мимолётного касания края (мс) <button type="button" class="settings-help" data-tooltip="Курсор должен находиться в edge-зоне непрерывно это время. Короткие касания края игнорируются.">?</button>
+        <input type="number" class="settings-edge-hover-delay" min="0" max="1000" step="50" />
+      </label>
+      <label class="settings-checkbox-row"><input type="checkbox" class="settings-preview-toggle" /> Показывать превью <button type="button" class="settings-help" data-tooltip="Включает окно превью при наведении на элемент списка вкладок.">?</button></label>
+      <label>Позиция <button type="button" class="settings-help" data-tooltip="Выберите сторону, где может открываться боковая панель.">?</button>
         <select class="settings-position">
           <option value="left">Слева</option>
           <option value="right">Справа</option>
           <option value="both">Слева и справа</option>
         </select>
       </label>
-      <label>Задержка показа (мс)
+      <label>Задержка показа (мс) <button type="button" class="settings-help" data-tooltip="После прохождения edge-проверок панель откроется через указанную задержку.">?</button>
         <input type="number" class="settings-show-delay" min="0" max="3000" step="50" />
       </label>
-      <label>Задержка скрытия (мс)
+      <label>Задержка скрытия (мс) <button type="button" class="settings-help" data-tooltip="Сколько ждать перед скрытием панели после ухода курсора в сторону.">?</button>
         <input type="number" class="settings-hide-delay" min="0" max="3000" step="50" />
       </label>
-      <label>Тема
+      <label>Тема <button type="button" class="settings-help" data-tooltip="Светлая или тёмная тема оформления боковой панели.">?</button>
         <select class="settings-theme">
           <option value="dark">Темная</option>
           <option value="light">Светлая</option>
@@ -152,6 +167,9 @@
   const warningBox = sidebar.querySelector(".tab-sidebar-warning");
   const resizer = sidebar.querySelector(".tab-resizer");
   const previewToggle = sidebar.querySelector(".settings-preview-toggle");
+  const edgeSensitivityInput = sidebar.querySelector(".settings-edge-sensitivity");
+  const ignoreScrollbarCheckbox = sidebar.querySelector(".settings-ignore-scrollbar");
+  const edgeHoverDelayInput = sidebar.querySelector(".settings-edge-hover-delay");
   const positionSelect = sidebar.querySelector(".settings-position");
   const showDelayInput = sidebar.querySelector(".settings-show-delay");
   const hideDelayInput = sidebar.querySelector(".settings-hide-delay");
@@ -160,6 +178,7 @@
   const emptyState = sidebar.querySelector(".tab-sidebar-empty");
   const preview = sidebar.querySelector(".tab-preview");
   const tooltip = sidebar.querySelector(".tab-tooltip");
+  const settingsHelpButtons = sidebar.querySelectorAll(".settings-help");
 
   const getTargetSide = () => (settings.position === "both" ? currentSide : settings.position);
 
@@ -211,9 +230,15 @@
       showDelay: Number(result.showDelay ?? DEFAULT_SETTINGS.showDelay),
       hideDelay: Number(result.hideDelay ?? DEFAULT_SETTINGS.hideDelay),
       width: Math.max(260, Math.min(560, Number(result.width ?? DEFAULT_SETTINGS.width))),
+      edgeSensitivity: Math.max(0, Math.min(48, Number(result.edgeSensitivity ?? DEFAULT_SETTINGS.edgeSensitivity))),
+      edgeHoverDelay: Math.max(0, Math.min(1000, Number(result.edgeHoverDelay ?? DEFAULT_SETTINGS.edgeHoverDelay))),
+      ignoreScrollbarHover: Boolean(result.ignoreScrollbarHover ?? DEFAULT_SETTINGS.ignoreScrollbarHover),
     };
 
     previewToggle.checked = Boolean(settings.showPreview);
+    edgeSensitivityInput.value = String(settings.edgeSensitivity);
+    ignoreScrollbarCheckbox.checked = Boolean(settings.ignoreScrollbarHover);
+    edgeHoverDelayInput.value = String(settings.edgeHoverDelay);
     positionSelect.value = settings.position;
     showDelayInput.value = String(settings.showDelay);
     hideDelayInput.value = String(settings.hideDelay);
@@ -285,15 +310,6 @@
     sortPanel.hidden = true;
   };
 
-  const reconcileSidebarOrder = () => {
-    const presentIds = allTabs.map((tab) => tab.id);
-    const presentSet = new Set(presentIds);
-    sidebarOrder = sidebarOrder.filter((tabId) => presentSet.has(tabId));
-    presentIds.forEach((id) => {
-      if (!sidebarOrder.includes(id)) sidebarOrder.push(id);
-    });
-  };
-
   const requestTabs = async () => {
     const response = await safeSendMessage({ type: "getTabs" });
     if (!response?.success) {
@@ -306,7 +322,7 @@
 
     warningBox.hidden = true;
     allTabs = response.tabs || [];
-    reconcileSidebarOrder();
+    sidebarOrder = allTabs.map((tab) => tab.id);
     applyZoomCompensation(response.zoomFactor);
     renderTabs();
   };
@@ -369,10 +385,7 @@
     }
   };
 
-  const getBaseOrderedTabs = () => {
-    const tabMap = new Map(allTabs.map((tab) => [tab.id, tab]));
-    return sidebarOrder.map((id) => tabMap.get(id)).filter(Boolean);
-  };
+  const getBaseOrderedTabs = () => allTabs.slice();
 
   const sortUnpinnedTabs = (tabs) => {
     if (sortMode === SORT_NONE) return tabs;
@@ -537,11 +550,46 @@
   };
 
   const getTriggerSide = (event) => {
-    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX ? "left" : "";
-    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX ? "right" : "";
-    if (event.clientX <= EDGE_TRIGGER_PX) return "left";
-    if (event.clientX >= window.innerWidth - EDGE_TRIGGER_PX) return "right";
+    const edgeSize = Math.max(0, Math.min(48, Number(settings.edgeSensitivity) || 0));
+    if (edgeSize <= 0) return "";
+    if (settings.position === "left") return event.clientX <= edgeSize ? "left" : "";
+    if (settings.position === "right") return event.clientX >= window.innerWidth - edgeSize ? "right" : "";
+    if (event.clientX <= edgeSize) return "left";
+    if (event.clientX >= window.innerWidth - edgeSize) return "right";
     return "";
+  };
+
+  const isScrollbarHover = (event, side) => {
+    const docEl = document.documentElement;
+    const verticalScrollbar = window.innerWidth - docEl.clientWidth;
+    if (verticalScrollbar > 0) {
+      if (side === "right") return event.clientX >= window.innerWidth - verticalScrollbar;
+      if (side === "left") return event.clientX <= verticalScrollbar;
+      return false;
+    }
+
+    const mayHaveOverlayScrollbar = side === "right" && docEl.scrollHeight > window.innerHeight;
+    return mayHaveOverlayScrollbar;
+  };
+
+  const cancelEdgeHover = () => {
+    if (edgeHoverTimer) {
+      clearTimeout(edgeHoverTimer);
+      edgeHoverTimer = null;
+    }
+    edgeHoverSide = "";
+  };
+
+  const scheduleEdgeOpen = (side) => {
+    if (sidebarVisible) return;
+    if (edgeHoverSide === side && edgeHoverTimer) return;
+    cancelEdgeHover();
+    edgeHoverSide = side;
+    const delay = Math.max(0, Math.min(1000, Number(settings.edgeHoverDelay) || 0));
+    edgeHoverTimer = setTimeout(() => {
+      edgeHoverTimer = null;
+      showSidebar(side);
+    }, delay);
   };
 
   const shouldHideOnMove = (event) => {
@@ -597,7 +645,10 @@
       return;
     }
 
-    renderTabs();
+    const sortedIds = getSortedOrderIds();
+    sidebarOrder = sortedIds;
+    await safeSendMessage({ type: "updateSidebarOrder", tabIds: sortedIds });
+    await requestTabs();
   };
 
   const resetSort = async () => {
@@ -639,9 +690,19 @@
 
   document.addEventListener("mousemove", (event) => {
     const triggerSide = getTriggerSide(event);
-    if (triggerSide) {
-      showSidebar(triggerSide);
-    } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
+    if (!extensionEnabled) {
+      cancelEdgeHover();
+    } else if (triggerSide) {
+      if (settings.ignoreScrollbarHover && isScrollbarHover(event, triggerSide)) {
+        cancelEdgeHover();
+      } else {
+        scheduleEdgeOpen(triggerSide);
+      }
+    } else {
+      cancelEdgeHover();
+    }
+
+    if (!triggerSide && sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       scheduleHide();
     }
   });
@@ -700,6 +761,23 @@
     settings.showPreview = previewToggle.checked;
     saveSettings();
     hidePreview();
+  });
+
+  edgeSensitivityInput.addEventListener("change", () => {
+    settings.edgeSensitivity = Math.max(0, Math.min(48, Number(edgeSensitivityInput.value) || 0));
+    edgeSensitivityInput.value = String(settings.edgeSensitivity);
+    saveSettings();
+  });
+
+  ignoreScrollbarCheckbox.addEventListener("change", () => {
+    settings.ignoreScrollbarHover = ignoreScrollbarCheckbox.checked;
+    saveSettings();
+  });
+
+  edgeHoverDelayInput.addEventListener("change", () => {
+    settings.edgeHoverDelay = Math.max(0, Math.min(1000, Number(edgeHoverDelayInput.value) || 0));
+    edgeHoverDelayInput.value = String(settings.edgeHoverDelay);
+    saveSettings();
   });
 
   positionSelect.addEventListener("change", () => {
@@ -816,13 +894,12 @@
       if (!targetTabId || targetTabId === draggedTabId) return;
 
       sidebarOrder = moveTabInArray(sidebarOrder, draggedTabId, targetTabId, dropInsertAfter);
+      await safeSendMessage({ type: "updateSidebarOrder", tabIds: sidebarOrder });
 
       if (sortWithBrowserCheckbox.checked) {
         await applyBrowserOrder(sidebarOrder);
-        await requestTabs();
-      } else {
-        renderTabs();
       }
+      await requestTabs();
     } finally {
       dropTargetTabId = null;
       dropInsertAfter = false;
@@ -848,6 +925,19 @@
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "zoomChanged") {
       applyZoomCompensation(message.zoomFactor);
+    }
+    if (message?.type === "sidebarOrderChanged") {
+      requestTabs();
+    }
+    if (message?.type === "manualOpenSidebar") {
+      showSidebar(currentSide || "left");
+    }
+    if (message?.type === "extensionStateChanged") {
+      extensionEnabled = Boolean(message.enabled);
+      if (!extensionEnabled) {
+        cancelEdgeHover();
+        hideSidebar(true);
+      }
     }
   });
 
@@ -892,7 +982,34 @@
     document.addEventListener("mouseup", onUp);
   });
 
+  settingsHelpButtons.forEach((button) => {
+    button.addEventListener("mouseenter", (event) => {
+      if (settingsTooltipTimer) clearTimeout(settingsTooltipTimer);
+      const target = event.currentTarget;
+      settingsTooltipTimer = setTimeout(() => {
+        tooltip.textContent = target.dataset.tooltip || "";
+        const rect = target.getBoundingClientRect();
+        const sidebarRect = sidebar.getBoundingClientRect();
+        tooltip.style.top = `${Math.max(16, rect.top - sidebarRect.top - 28)}px`;
+        tooltip.classList.add("visible");
+      }, SETTINGS_TOOLTIP_DELAY_MS);
+    });
+    button.addEventListener("mouseleave", () => {
+      if (settingsTooltipTimer) clearTimeout(settingsTooltipTimer);
+      hideTooltip();
+    });
+    button.addEventListener("focus", (event) => {
+      const target = event.currentTarget;
+      tooltip.textContent = target.dataset.tooltip || "";
+      tooltip.style.top = "16px";
+      tooltip.classList.add("visible");
+    });
+    button.addEventListener("blur", hideTooltip);
+  });
+
   loadSettings().finally(async () => {
+    const extensionState = await safeSendMessage({ type: "getExtensionState" });
+    extensionEnabled = extensionState?.success ? Boolean(extensionState.enabled) : true;
     const zoomResponse = await safeSendMessage({ type: "getZoom" });
     if (zoomResponse?.success) {
       applyZoomCompensation(zoomResponse.zoomFactor);
