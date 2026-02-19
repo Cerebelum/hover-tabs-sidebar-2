@@ -8,6 +8,12 @@
 
 ---
 
+![Demo-01](https://github.com/Cerebelum/hover-tabs-sidebar-2/blob/main/screenshots/chrome-capture-01.gif)
+
+![Demo-02](https://github.com/Cerebelum/hover-tabs-sidebar-2/blob/main/screenshots/chrome-capture-02.gif)
+
+---
+
 ## ✨ Что делает расширение
 
 Hover Tabs Sidebar добавляет скрытую боковую панель с вкладками, которая появляется при подведении курсора к краю окна браузера.
