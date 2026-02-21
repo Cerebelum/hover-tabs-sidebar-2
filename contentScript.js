@@ -2,7 +2,6 @@
   if (window.__tabHoverSidebarInit) return;
   window.__tabHoverSidebarInit = true;
 
-  const EDGE_TRIGGER_PX = 16;
   const SAFE_ICON_CACHE = new Map();
   const SORT_NONE = "none";
   const DEFAULT_SETTINGS = {
@@ -15,6 +14,7 @@
     edgeTransientDelayMs: 120,
     theme: "dark",
     width: 320,
+    edgeSensitivityPx: 16,
   };
 
   let sidebarVisible = false;
@@ -543,10 +543,10 @@
   };
 
   const getTriggerSide = (event) => {
-    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX ? "left" : "";
-    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX ? "right" : "";
-    if (event.clientX <= EDGE_TRIGGER_PX) return "left";
-    if (event.clientX >= window.innerWidth - EDGE_TRIGGER_PX) return "right";
+    if (settings.position === "left") return event.clientX <= settings.edgeSensitivityPx ? "left" : "";
+    if (settings.position === "right") return event.clientX >= window.innerWidth - settings.edgeSensitivityPx ? "right" : "";
+    if (event.clientX <= settings.edgeSensitivityPx) return "left";
+    if (event.clientX >= window.innerWidth - settings.edgeSensitivityPx) return "right";
     return "";
   };
 
