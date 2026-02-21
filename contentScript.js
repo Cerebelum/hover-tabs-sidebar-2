@@ -7,6 +7,7 @@
   const DEFAULT_SETTINGS = {
     showPreview: true,
     position: "left",
+    edgeTransientDelayMs: 0,
     showDelay: 0,
     hideDelay: 220,
     edgeSensitivityPx: 8,
@@ -20,6 +21,8 @@
   let sidebarVisible = false;
   let hideTimer = null;
   let showTimer = null;
+  let transientTimerId = null;
+  let transientDelayPassed = false;
   let previewItem = null;
   let tooltipTimer = null;
   let allTabs = [];
@@ -239,6 +242,14 @@
       clearTimeout(showTimer);
       showTimer = null;
     }
+  };
+
+  const cancelTransient = () => {
+    if (transientTimerId) {
+      clearTimeout(transientTimerId);
+      transientTimerId = null;
+    }
+    transientDelayPassed = false;
   };
 
   const hideTooltip = () => {
@@ -646,9 +657,26 @@
   document.addEventListener("mousemove", (event) => {
     const triggerSide = getTriggerSide(event);
     if (triggerSide) {
-      showSidebar(triggerSide);
+      const transientDelay = Math.max(0, Number(settings.edgeTransientDelayMs) || 0);
+      if (transientDelay === 0 || transientDelayPassed) {
+        showSidebar(triggerSide);
+        return;
+      }
+      if (transientTimerId) return;
+      transientTimerId = setTimeout(() => {
+        transientTimerId = null;
+        transientDelayPassed = true;
+        const side = getTriggerSide(event);
+        if (side) {
+          showSidebar(side);
+        } else {
+          transientDelayPassed = false;
+        }
+      }, transientDelay);
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       scheduleHide();
+    } else {
+      cancelTransient();
     }
   });
 
