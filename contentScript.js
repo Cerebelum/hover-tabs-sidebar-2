@@ -10,6 +10,9 @@
     position: "left",
     showDelay: 0,
     hideDelay: 220,
+    edgeSensitivityPx: 8,
+    ignoreScrollbarHover: true,
+    edgeTransientDelayMs: 120,
     theme: "dark",
     width: 320,
   };
@@ -210,6 +213,9 @@
       ...result,
       showDelay: Number(result.showDelay ?? DEFAULT_SETTINGS.showDelay),
       hideDelay: Number(result.hideDelay ?? DEFAULT_SETTINGS.hideDelay),
+      edgeSensitivityPx: Number(result.edgeSensitivityPx ?? DEFAULT_SETTINGS.edgeSensitivityPx),
+      ignoreScrollbarHover: Boolean(result.ignoreScrollbarHover ?? DEFAULT_SETTINGS.ignoreScrollbarHover),
+      edgeTransientDelayMs: Number(result.edgeTransientDelayMs ?? DEFAULT_SETTINGS.edgeTransientDelayMs),
       width: Math.max(260, Math.min(560, Number(result.width ?? DEFAULT_SETTINGS.width))),
     };
 
