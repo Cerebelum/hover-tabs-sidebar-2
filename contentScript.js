@@ -8,6 +8,7 @@
     showPreview: true,
     position: "left",
     edgeTransientDelayMs: 0,
+    ignoreScrollbarHover: false,
     showDelay: 0,
     hideDelay: 220,
     edgeSensitivityPx: 8,
@@ -655,6 +656,18 @@
   };
 
   document.addEventListener("mousemove", (event) => {
+    if (settings.ignoreScrollbarHover) {
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      if (
+        event.clientX >= document.documentElement.clientWidth ||
+        ((settings.position === "left" || settings.position === "both") &&
+          scrollbarWidth > 0 &&
+          event.clientX <= scrollbarWidth)
+      ) {
+        return;
+      }
+    }
+
     const triggerSide = getTriggerSide(event);
     if (triggerSide) {
       const transientDelay = Math.max(0, Number(settings.edgeTransientDelayMs) || 0);
