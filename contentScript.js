@@ -4,26 +4,22 @@
 
   const SAFE_ICON_CACHE = new Map();
   const SORT_NONE = "none";
+  const EDGE_TRIGGER_PX = 16;
   const DEFAULT_SETTINGS = {
     showPreview: true,
     position: "left",
-    edgeTransientDelayMs: 0,
-    ignoreScrollbarHover: false,
     showDelay: 0,
     hideDelay: 220,
-    edgeSensitivityPx: 8,
-    ignoreScrollbarHover: true,
-    edgeTransientDelayMs: 120,
     theme: "dark",
     width: 320,
     edgeSensitivityPx: 16,
+    ignoreScrollbarHover: false,
+    edgeTransientDelayMs: 0,
   };
 
   let sidebarVisible = false;
   let hideTimer = null;
   let showTimer = null;
-  let transientTimerId = null;
-  let transientDelayPassed = false;
   let previewItem = null;
   let tooltipTimer = null;
   let allTabs = [];
@@ -243,14 +239,6 @@
       clearTimeout(showTimer);
       showTimer = null;
     }
-  };
-
-  const cancelTransient = () => {
-    if (transientTimerId) {
-      clearTimeout(transientTimerId);
-      transientTimerId = null;
-    }
-    transientDelayPassed = false;
   };
 
   const hideTooltip = () => {
@@ -555,10 +543,10 @@
   };
 
   const getTriggerSide = (event) => {
-    if (settings.position === "left") return event.clientX <= settings.edgeSensitivityPx ? "left" : "";
-    if (settings.position === "right") return event.clientX >= window.innerWidth - settings.edgeSensitivityPx ? "right" : "";
-    if (event.clientX <= settings.edgeSensitivityPx) return "left";
-    if (event.clientX >= window.innerWidth - settings.edgeSensitivityPx) return "right";
+    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX ? "left" : "";
+    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX ? "right" : "";
+    if (event.clientX <= EDGE_TRIGGER_PX) return "left";
+    if (event.clientX >= window.innerWidth - EDGE_TRIGGER_PX) return "right";
     return "";
   };
 
@@ -656,40 +644,11 @@
   };
 
   document.addEventListener("mousemove", (event) => {
-    if (settings.ignoreScrollbarHover) {
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-      if (
-        event.clientX >= document.documentElement.clientWidth ||
-        ((settings.position === "left" || settings.position === "both") &&
-          scrollbarWidth > 0 &&
-          event.clientX <= scrollbarWidth)
-      ) {
-        return;
-      }
-    }
-
     const triggerSide = getTriggerSide(event);
     if (triggerSide) {
-      const transientDelay = Math.max(0, Number(settings.edgeTransientDelayMs) || 0);
-      if (transientDelay === 0 || transientDelayPassed) {
-        showSidebar(triggerSide);
-        return;
-      }
-      if (transientTimerId) return;
-      transientTimerId = setTimeout(() => {
-        transientTimerId = null;
-        transientDelayPassed = true;
-        const side = getTriggerSide(event);
-        if (side) {
-          showSidebar(side);
-        } else {
-          transientDelayPassed = false;
-        }
-      }, transientDelay);
+      showSidebar(triggerSide);
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       scheduleHide();
-    } else {
-      cancelTransient();
     }
   });
 
