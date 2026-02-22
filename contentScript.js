@@ -543,10 +543,11 @@
   };
 
   const getTriggerSide = (event) => {
-    if (settings.position === "left") return event.clientX <= EDGE_TRIGGER_PX ? "left" : "";
-    if (settings.position === "right") return event.clientX >= window.innerWidth - EDGE_TRIGGER_PX ? "right" : "";
-    if (event.clientX <= EDGE_TRIGGER_PX) return "left";
-    if (event.clientX >= window.innerWidth - EDGE_TRIGGER_PX) return "right";
+    const effectiveEdgePx = Math.max(0, Number(settings.edgeSensitivityPx) || EDGE_TRIGGER_PX);
+    if (settings.position === "left") return event.clientX <= effectiveEdgePx ? "left" : "";
+    if (settings.position === "right") return event.clientX >= window.innerWidth - effectiveEdgePx ? "right" : "";
+    if (event.clientX <= effectiveEdgePx) return "left";
+    if (event.clientX >= window.innerWidth - effectiveEdgePx) return "right";
     return "";
   };
 
