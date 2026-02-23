@@ -25,6 +25,7 @@
   let allTabs = [];
   let searchQuery = "";
   let settings = { ...DEFAULT_SETTINGS };
+  let edgeTriggerPx = EDGE_TRIGGER_PX;
   let keepOpenUntil = 0;
   let currentZoomFactor = 1;
   let currentSide = "left";
@@ -218,10 +219,10 @@
       edgeTransientDelayMs: Number(result.edgeTransientDelayMs ?? DEFAULT_SETTINGS.edgeTransientDelayMs),
       width: Math.max(260, Math.min(560, Number(result.width ?? DEFAULT_SETTINGS.width))),
     };
-    const edgeTriggerPx =
+    edgeTriggerPx =
       Number.isFinite(Number(settings.edgeSensitivityPx))
         ? Math.max(0, Number(settings.edgeSensitivityPx))
-        : 16;
+        : EDGE_TRIGGER_PX;
 
     previewToggle.checked = Boolean(settings.showPreview);
     positionSelect.value = settings.position;
@@ -547,11 +548,10 @@
   };
 
   const getTriggerSide = (event) => {
-    const effectiveEdgePx = Math.max(0, Number(settings.edgeSensitivityPx) || EDGE_TRIGGER_PX);
-    if (settings.position === "left") return event.clientX <= effectiveEdgePx ? "left" : "";
-    if (settings.position === "right") return event.clientX >= window.innerWidth - effectiveEdgePx ? "right" : "";
-    if (event.clientX <= effectiveEdgePx) return "left";
-    if (event.clientX >= window.innerWidth - effectiveEdgePx) return "right";
+    if (settings.position === "left") return event.clientX <= edgeTriggerPx ? "left" : "";
+    if (settings.position === "right") return event.clientX >= window.innerWidth - edgeTriggerPx ? "right" : "";
+    if (event.clientX <= edgeTriggerPx) return "left";
+    if (event.clientX >= window.innerWidth - edgeTriggerPx) return "right";
     return "";
   };
 
