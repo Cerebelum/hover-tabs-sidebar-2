@@ -218,6 +218,10 @@
       edgeTransientDelayMs: Number(result.edgeTransientDelayMs ?? DEFAULT_SETTINGS.edgeTransientDelayMs),
       width: Math.max(260, Math.min(560, Number(result.width ?? DEFAULT_SETTINGS.width))),
     };
+    const edgeTriggerPx =
+      Number.isFinite(Number(settings.edgeSensitivityPx))
+        ? Math.max(0, Number(settings.edgeSensitivityPx))
+        : 16;
 
     previewToggle.checked = Boolean(settings.showPreview);
     positionSelect.value = settings.position;
