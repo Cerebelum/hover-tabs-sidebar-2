@@ -127,6 +127,9 @@
       <label>Задержка скрытия (мс)
         <input type="number" class="settings-hide-delay" min="0" max="3000" step="50" />
       </label>
+      <label>Edge activation zone (px)
+        <input type="number" class="settings-edge-sensitivity" min="0" max="128" step="1" />
+      </label>
       <label>Тема
         <select class="settings-theme">
           <option value="dark">Темная</option>
@@ -159,6 +162,7 @@
   const positionSelect = sidebar.querySelector(".settings-position");
   const showDelayInput = sidebar.querySelector(".settings-show-delay");
   const hideDelayInput = sidebar.querySelector(".settings-hide-delay");
+  const edgeSensitivityInput = sidebar.querySelector(".settings-edge-sensitivity");
   const themeSelect = sidebar.querySelector(".settings-theme");
   const list = sidebar.querySelector(".tabs-list");
   const emptyState = sidebar.querySelector(".tab-sidebar-empty");
@@ -228,6 +232,7 @@
     positionSelect.value = settings.position;
     showDelayInput.value = String(settings.showDelay);
     hideDelayInput.value = String(settings.hideDelay);
+    edgeSensitivityInput.value = String(settings.edgeSensitivityPx);
     themeSelect.value = settings.theme;
     applySidebarPlacement();
   };
@@ -728,6 +733,16 @@
   hideDelayInput.addEventListener("change", () => {
     settings.hideDelay = Math.max(0, Number(hideDelayInput.value) || 0);
     hideDelayInput.value = String(settings.hideDelay);
+    saveSettings();
+  });
+
+  edgeSensitivityInput.addEventListener("input", () => {
+    settings.edgeSensitivityPx = Number(edgeSensitivityInput.value);
+    saveSettings();
+  });
+
+  edgeSensitivityInput.addEventListener("change", () => {
+    settings.edgeSensitivityPx = Number(edgeSensitivityInput.value);
     saveSettings();
   });
 
