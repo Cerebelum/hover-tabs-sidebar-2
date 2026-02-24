@@ -914,13 +914,19 @@
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "setSidebarEnabled") {
-      sidebarEnabled = Boolean(message.enabled);
-      if (!sidebarEnabled) {
+      const shouldEnableSidebar = Boolean(message.enabled);
+      sidebarEnabled = shouldEnableSidebar;
+      if (!shouldEnableSidebar) {
         hideSidebar(true);
       }
       if (chrome.storage?.local) {
-        chrome.storage.local.set({ enabled: sidebarEnabled });
+        chrome.storage.local.set({ enabled: shouldEnableSidebar });
       }
+      return;
+    }
+
+    if (message?.type === "manualCloseSidebar") {
+      if (sidebarVisible) hideSidebar(true);
       return;
     }
 
