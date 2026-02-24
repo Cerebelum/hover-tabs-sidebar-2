@@ -2,6 +2,26 @@ const faviconCache = new Map();
 const tabPreviewCache = new Map();
 const MAX_CACHE_SIZE = 100;
 
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "open_tab_sidebar",
+    title: "Open Tab Sidebar",
+    contexts: ["all"],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info) => {
+  if (info.menuItemId !== "open_tab_sidebar") return;
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const activeTabId = tabs?.[0]?.id;
+    if (!activeTabId) return;
+    chrome.tabs.sendMessage(activeTabId, { type: "manualOpenSidebar" }, () => {
+      void chrome.runtime.lastError;
+    });
+  });
+});
+
 const setWithLimit = (map, key, value) => {
   if (map.has(key)) {
     map.delete(key);

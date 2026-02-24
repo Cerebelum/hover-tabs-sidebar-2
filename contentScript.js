@@ -910,6 +910,15 @@
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "zoomChanged") {
       applyZoomCompensation(message.zoomFactor);
+      return;
+    }
+
+    if (message?.type === "manualOpenSidebar") {
+      if (sidebarVisible) return;
+      cancelShow();
+      sidebarVisible = true;
+      sidebar.classList.add("visible");
+      requestTabs();
     }
   });
 
