@@ -19,6 +19,7 @@
   };
 
   let sidebarVisible = false;
+  let visibilitySource = null;
   let sidebarEnabled = true;
   let hideTimer = null;
   let showTimer = null;
@@ -296,6 +297,7 @@
   };
 
   const scheduleHide = () => {
+    if (visibilitySource === "manual") return;
     if (Date.now() < keepOpenUntil) return;
     cancelHide();
     hideTimer = setTimeout(() => hideSidebar(), Math.max(0, Number(settings.hideDelay) || 0));
@@ -303,6 +305,7 @@
 
   const showSidebar = (side) => {
     if (!sidebarEnabled) return;
+    if (visibilitySource === "manual" && side) return;
     if (side && settings.position === "both") {
       switchSidebarSideWithoutJank(side);
     }
@@ -324,6 +327,7 @@
       if (active && sidebar.contains(active) && sidebar.matches(":hover")) return;
     }
     sidebarVisible = false;
+    visibilitySource = null;
     sidebar.classList.remove("visible");
     hidePreview();
     settingsPanel.hidden = true;
@@ -691,6 +695,7 @@
         triggerShowWithIntentCheck(triggerSide);
       }
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
+      if (visibilitySource === "manual") return;
       cursorInTriggerZone = false;
       cancelEdgeIntent();
       cancelShow();
@@ -713,11 +718,13 @@
   window.addEventListener("blur", () => hideSidebar(true));
 
   document.addEventListener("pointerdown", (event) => {
+    if (visibilitySource === "manual") return;
     if (!sidebarVisible || sidebar.contains(event.target)) return;
     hideSidebar(true);
   });
 
   document.addEventListener("focusin", (event) => {
+    if (visibilitySource === "manual") return;
     if (!sidebarVisible || sidebar.contains(event.target)) return;
     hideSidebar(true);
   });
@@ -926,7 +933,8 @@
     }
 
     if (message?.type === "manualCloseSidebar") {
-      if (sidebarVisible) hideSidebar(true);
+      visibilitySource = null;
+      hideSidebar(true);
       return;
     }
 
@@ -937,7 +945,8 @@
 
     if (message?.type === "manualOpenSidebar") {
       if (!sidebarEnabled) return;
-      if (sidebarVisible) return;
+      visibilitySource = "manual";
+      cancelHide();
       cancelShow();
       sidebarVisible = true;
       sidebar.classList.add("visible");
