@@ -6,6 +6,7 @@
   const SORT_NONE = "none";
   const EDGE_TRIGGER_PX = 16;
   const DEFAULT_SETTINGS = {
+    enabled: true,
     showPreview: true,
     position: "left",
     showDelay: 0,
@@ -18,6 +19,7 @@
   };
 
   let sidebarVisible = false;
+  let sidebarEnabled = true;
   let hideTimer = null;
   let showTimer = null;
   let edgeIntentTimer = null;
@@ -225,6 +227,7 @@
       edgeTransientDelayMs: Number(result.edgeTransientDelayMs ?? DEFAULT_SETTINGS.edgeTransientDelayMs),
       width: Math.max(260, Math.min(560, Number(result.width ?? DEFAULT_SETTINGS.width))),
     };
+    sidebarEnabled = Boolean(result.enabled ?? DEFAULT_SETTINGS.enabled);
     edgeTriggerPx =
       Number.isFinite(Number(settings.edgeSensitivityPx))
         ? Math.max(0, Number(settings.edgeSensitivityPx))
@@ -261,6 +264,7 @@
   };
 
   const triggerShowWithIntentCheck = (side) => {
+    if (!sidebarEnabled) return;
     const edgeTransientDelay = Math.max(0, Number(settings.edgeTransientDelayMs) || 0);
     if (edgeTransientDelay === 0) {
       showSidebar(side);
@@ -298,6 +302,7 @@
   };
 
   const showSidebar = (side) => {
+    if (!sidebarEnabled) return;
     if (side && settings.position === "both") {
       switchSidebarSideWithoutJank(side);
     }
@@ -908,12 +913,24 @@
   list.addEventListener("mouseleave", () => hidePreview());
 
   chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "setSidebarEnabled") {
+      sidebarEnabled = Boolean(message.enabled);
+      if (!sidebarEnabled) {
+        hideSidebar(true);
+      }
+      if (chrome.storage?.local) {
+        chrome.storage.local.set({ enabled: sidebarEnabled });
+      }
+      return;
+    }
+
     if (message?.type === "zoomChanged") {
       applyZoomCompensation(message.zoomFactor);
       return;
     }
 
     if (message?.type === "manualOpenSidebar") {
+      if (!sidebarEnabled) return;
       if (sidebarVisible) return;
       cancelShow();
       sidebarVisible = true;
@@ -977,6 +994,13 @@
     if (Object.prototype.hasOwnProperty.call(changes, "edgeTransientDelayMs")) {
       settings.edgeTransientDelayMs = Number(changes.edgeTransientDelayMs.newValue ?? DEFAULT_SETTINGS.edgeTransientDelayMs);
       changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "enabled")) {
+      sidebarEnabled = Boolean(changes.enabled.newValue ?? DEFAULT_SETTINGS.enabled);
+      if (!sidebarEnabled) {
+        hideSidebar(true);
+      }
     }
 
     if (!changed) return;
