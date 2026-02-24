@@ -20,6 +20,7 @@
   let sidebarVisible = false;
   let hideTimer = null;
   let showTimer = null;
+  let edgeIntentTimer = null;
   let previewItem = null;
   let tooltipTimer = null;
   let allTabs = [];
@@ -250,6 +251,28 @@
       clearTimeout(showTimer);
       showTimer = null;
     }
+  };
+
+  const cancelEdgeIntent = () => {
+    if (edgeIntentTimer) {
+      clearTimeout(edgeIntentTimer);
+      edgeIntentTimer = null;
+    }
+  };
+
+  const triggerShowWithIntentCheck = (side) => {
+    const edgeTransientDelay = Math.max(0, Number(settings.edgeTransientDelayMs) || 0);
+    if (edgeTransientDelay === 0) {
+      showSidebar(side);
+      return;
+    }
+
+    cancelEdgeIntent();
+    edgeIntentTimer = setTimeout(() => {
+      edgeIntentTimer = null;
+      if (!cursorInTriggerZone) return;
+      showSidebar(side);
+    }, edgeTransientDelay);
   };
 
   const hideTooltip = () => {
@@ -655,18 +678,21 @@
   };
 
   document.addEventListener("mousemove", (event) => {
-    const triggerSide = getTriggerSide(event);
+    const triggerSide =
+      settings.ignoreScrollbarHover && event.clientX >= document.documentElement.clientWidth ? "" : getTriggerSide(event);
     if (triggerSide) {
       if (!cursorInTriggerZone) {
         cursorInTriggerZone = true;
-        showSidebar(triggerSide);
+        triggerShowWithIntentCheck(triggerSide);
       }
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       cursorInTriggerZone = false;
+      cancelEdgeIntent();
       cancelShow();
       scheduleHide();
     } else {
       cursorInTriggerZone = false;
+      cancelEdgeIntent();
       cancelShow();
     }
   });
