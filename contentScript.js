@@ -29,6 +29,7 @@
   let keepOpenUntil = 0;
   let currentZoomFactor = 1;
   let currentSide = "left";
+  let cursorInTriggerZone = false;
   let sortMode = SORT_NONE;
   let sortWithBrowser = false;
   let sidebarOrder = [];
@@ -274,14 +275,14 @@
   };
 
   const showSidebar = (side) => {
-    cancelShow();
     if (side && settings.position === "both") {
       switchSidebarSideWithoutJank(side);
     }
 
-    if (sidebarVisible) return;
+    if (sidebarVisible || showTimer) return;
     const delay = Math.max(0, Number(settings.showDelay) || 0);
     showTimer = setTimeout(() => {
+      showTimer = null;
       sidebarVisible = true;
       sidebar.classList.add("visible");
       requestTabs();
@@ -656,9 +657,17 @@
   document.addEventListener("mousemove", (event) => {
     const triggerSide = getTriggerSide(event);
     if (triggerSide) {
-      showSidebar(triggerSide);
+      if (!cursorInTriggerZone) {
+        cursorInTriggerZone = true;
+        showSidebar(triggerSide);
+      }
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
+      cursorInTriggerZone = false;
+      cancelShow();
       scheduleHide();
+    } else {
+      cursorInTriggerZone = false;
+      cancelShow();
     }
   });
 
@@ -738,11 +747,12 @@
 
   edgeSensitivityInput.addEventListener("input", () => {
     settings.edgeSensitivityPx = Number(edgeSensitivityInput.value);
-    saveSettings();
+    edgeTriggerPx = Number.isFinite(Number(settings.edgeSensitivityPx)) ? Math.max(0, Number(settings.edgeSensitivityPx)) : EDGE_TRIGGER_PX;
   });
 
   edgeSensitivityInput.addEventListener("change", () => {
     settings.edgeSensitivityPx = Number(edgeSensitivityInput.value);
+    edgeTriggerPx = Number.isFinite(Number(settings.edgeSensitivityPx)) ? Math.max(0, Number(settings.edgeSensitivityPx)) : EDGE_TRIGGER_PX;
     saveSettings();
   });
 
@@ -875,6 +885,67 @@
     if (message?.type === "zoomChanged") {
       applyZoomCompensation(message.zoomFactor);
     }
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+
+    let changed = false;
+
+    if (Object.prototype.hasOwnProperty.call(changes, "showPreview")) {
+      settings.showPreview = Boolean(changes.showPreview.newValue ?? DEFAULT_SETTINGS.showPreview);
+      previewToggle.checked = settings.showPreview;
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "position")) {
+      settings.position = changes.position.newValue ?? DEFAULT_SETTINGS.position;
+      positionSelect.value = settings.position;
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "showDelay")) {
+      settings.showDelay = Number(changes.showDelay.newValue ?? DEFAULT_SETTINGS.showDelay);
+      showDelayInput.value = String(settings.showDelay);
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "hideDelay")) {
+      settings.hideDelay = Number(changes.hideDelay.newValue ?? DEFAULT_SETTINGS.hideDelay);
+      hideDelayInput.value = String(settings.hideDelay);
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "theme")) {
+      settings.theme = changes.theme.newValue ?? DEFAULT_SETTINGS.theme;
+      themeSelect.value = settings.theme;
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "width")) {
+      settings.width = Math.max(260, Math.min(560, Number(changes.width.newValue ?? DEFAULT_SETTINGS.width)));
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "edgeSensitivityPx")) {
+      settings.edgeSensitivityPx = Number(changes.edgeSensitivityPx.newValue ?? DEFAULT_SETTINGS.edgeSensitivityPx);
+      edgeSensitivityInput.value = String(settings.edgeSensitivityPx);
+      edgeTriggerPx = Number.isFinite(Number(settings.edgeSensitivityPx)) ? Math.max(0, Number(settings.edgeSensitivityPx)) : EDGE_TRIGGER_PX;
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "ignoreScrollbarHover")) {
+      settings.ignoreScrollbarHover = Boolean(changes.ignoreScrollbarHover.newValue ?? DEFAULT_SETTINGS.ignoreScrollbarHover);
+      changed = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(changes, "edgeTransientDelayMs")) {
+      settings.edgeTransientDelayMs = Number(changes.edgeTransientDelayMs.newValue ?? DEFAULT_SETTINGS.edgeTransientDelayMs);
+      changed = true;
+    }
+
+    if (!changed) return;
+    applySidebarPlacement();
   });
 
   list.addEventListener(

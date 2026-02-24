@@ -1,5 +1,17 @@
 const faviconCache = new Map();
 const tabPreviewCache = new Map();
+const MAX_CACHE_SIZE = 100;
+
+const setWithLimit = (map, key, value) => {
+  if (map.has(key)) {
+    map.delete(key);
+  }
+  map.set(key, value);
+  if (map.size > MAX_CACHE_SIZE) {
+    const oldestKey = map.keys().next().value;
+    map.delete(oldestKey);
+  }
+};
 
 const buildExtensionFaviconUrl = (tabUrl) => {
   if (!tabUrl || typeof tabUrl !== "string") return "";
@@ -23,7 +35,7 @@ const captureTabPreview = (windowId, tabId) => {
 
   chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 55 }, (dataUrl) => {
     if (chrome.runtime.lastError?.message || !dataUrl) return;
-    tabPreviewCache.set(tabId, dataUrl);
+    setWithLimit(tabPreviewCache, tabId, dataUrl);
   });
 };
 
@@ -171,6 +183,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (type === "resolveFavicon" && url) {
+    try {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        reply(sendResponse, {}, "Неизвестный запрос либо отсутствуют параметры.");
+        return false;
+      }
+    } catch {
+      reply(sendResponse, {}, "Неизвестный запрос либо отсутствуют параметры.");
+      return false;
+    }
+
     if (faviconCache.has(url)) {
       reply(sendResponse, { dataUrl: faviconCache.get(url) });
       return true;
@@ -185,7 +208,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .then(blobToDataUrl)
       .then((dataUrl) => {
-        faviconCache.set(url, dataUrl);
+        setWithLimit(faviconCache, url, dataUrl);
         reply(sendResponse, { dataUrl });
       })
       .catch((error) => {
