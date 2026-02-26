@@ -657,6 +657,8 @@
     const triggerSide = getTriggerSide(event);
     if (triggerSide) {
       showSidebar(triggerSide);
+    } else if (!sidebarVisible) {
+      cancelShow();
     } else if (sidebarVisible && !sidebar.contains(event.target) && shouldHideOnMove(event)) {
       scheduleHide();
     }
