@@ -98,7 +98,7 @@
           <option value="lastViewedDesc">Последний просмотр (новые → старые)</option>
         </select>
       </label>
-      <label class="settings-checkbox-row"><input type="checkbox" class="sort-with-browser" /> Сортировать и стандартные вкладки Chrome</label>
+      <label class="settings-checkbox-row ui-checkbox"><input type="checkbox" class="sort-with-browser" /><span class="ui-checkbox-box" aria-hidden="true"></span><span class="ui-checkbox-label">Сортировать и стандартные вкладки Chrome</span></label>
       <div class="sort-actions">
         <button type="button" class="sort-apply">Применить</button>
         <button type="button" class="sort-reset">Сбросить</button>
@@ -113,7 +113,7 @@
       <span class="tabs-count">0</span>
     </div>
     <div class="tab-settings-panel" hidden>
-      <label class="settings-checkbox-row"><input type="checkbox" class="settings-preview-toggle" /> Показывать превью</label>
+      <label class="settings-checkbox-row ui-checkbox"><input type="checkbox" class="settings-preview-toggle" /><span class="ui-checkbox-box" aria-hidden="true"></span><span class="ui-checkbox-label">Показывать превью</span></label>
       <label>Позиция
         <select class="settings-position">
           <option value="left">Слева</option>
